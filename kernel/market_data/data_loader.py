@@ -40,11 +40,6 @@ class MarketDataLoader:
         
         if os.path.exists(file_path):
             return pd.read_csv(file_path)
-        
-        # Fallback to .xlsx just in case the transition isn't full
-        file_path_xlsx = os.path.join(self.base_dir, "yield_curves", rate_curve_type_value)
-        if os.path.exists(file_path_xlsx):
-            return pd.read_excel(file_path_xlsx)
             
         raise FileNotFoundError(f"Yield curve file not found: {file_path}")
 
