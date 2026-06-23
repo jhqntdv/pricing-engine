@@ -1,4 +1,4 @@
-from .abstract_interpolator import Interpolator
+from .abstract_interpolator import Interpolator, CalibrationError
 import numpy as np
 from scipy.optimize import curve_fit
 
@@ -44,10 +44,15 @@ class NelsonSiegelInterpolator(Interpolator):
         Returns:
             np.ndarray: Estimated parameters [beta0, beta1, beta2, tau].
         """
+        if len(self.maturities) < 4:
+            raise CalibrationError("Insufficient data points for Nelson-Siegel calibration (requires at least 4).")
         p0 = [0.02, -0.02, 0.02, 1.0]  # Initial parameter guess
-        params, _ = curve_fit(self._nelson_siegel, self.maturities, self.rates, p0=p0,
-                              bounds=([0, -np.inf, -np.inf, 0.01], [np.inf, np.inf, np.inf, np.inf]))
-        self.params = np.array(params)
+        try:
+            params, _ = curve_fit(self._nelson_siegel, self.maturities, self.rates, p0=p0,
+                                  bounds=([-np.inf, -np.inf, -np.inf, 0.01], [np.inf, np.inf, np.inf, np.inf]))
+            self.params = np.array(params)
+        except Exception as e:
+            raise CalibrationError(f"Nelson-Siegel calibration failed: {str(e)}")
 
     def interpolate(self, t: float) -> float:
         """

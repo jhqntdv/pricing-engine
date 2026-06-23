@@ -33,4 +33,4 @@ class CubicInterpolator(Interpolator):
         """
         if self.interpolator is None:
             raise ValueError("Interpolator has not been calibrated. Please call the 'calibrate' method first.")
-        return self.interpolator(t)
+        return float(self.interpolator(t))

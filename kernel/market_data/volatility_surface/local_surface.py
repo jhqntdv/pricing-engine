@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from scipy.stats import norm
 from . import AbstractVolatilitySurface
 from kernel.market_data import RateCurve
@@ -149,80 +148,3 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
         
         return min(max(local_vol, 0.05), 3.5)
 
-    def display_smiles(self) -> None:
-        """
-        Display volatility smiles for different maturities.
-        """
-        super().display_smiles(model_name="Local", reference_surface=self.svi_surface, ref_name="Implied SVI Vol")
-
-    def display_surface(self) -> None:
-        """
-        Display the local volatility surface in 3D.
-        """
-        strikes = np.linspace(self.spot / 2, self.spot * 2, 50)
-        maturities = np.linspace(self.option_data["Maturity"].min(), self.option_data["Maturity"].max(), 50)
-        local_surface = np.zeros((len(strikes), len(maturities)))
-
-        for i, K in enumerate(strikes):
-            for j, T in enumerate(maturities):
-                try:
-                    local_surface[i, j] = self.get_volatility(K, T) * 100
-                except Exception:
-                    local_surface[i, j] = np.nan
-
-        X, Y = np.meshgrid(maturities * 252, (strikes / self.spot) * 100)
-        fig = plt.figure(figsize=(12, 8))
-        ax = fig.add_subplot(111, projection="3d")
-        surf = ax.plot_surface(X, Y, local_surface, cmap="viridis", edgecolor="k", alpha=0.8)
-        
-        market_strikes = (self.option_data["Strike"] / self.spot) * 100
-        market_maturities = self.option_data["Maturity"] * 252
-        market_vols = self.option_data["Implied Volatility"]
-        ax.scatter(market_maturities, market_strikes, market_vols, color="red", label="Market options", s=20)
-
-        cbar = fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10)
-        cbar.set_label("Local volatility (%)", fontsize=12)
-        ax.set_xlabel("Maturity (days)", fontsize=12, labelpad=10)
-        ax.set_ylabel("Moneyness (% ATM)", fontsize=12, labelpad=10)
-        ax.set_zlabel("Volatility (%)", fontsize=12, labelpad=10)
-        ax.set_title("Local volatility surface", fontsize=14, fontweight="bold")
-        ax.legend(fontsize=10)
-        ax.grid(True, linestyle="--", alpha=0.5)
-        plt.tight_layout()
-        plt.show()
-
-    def display_price_surface(self) -> None:
-        """
-        Display the price surface of calls in 3D.
-        """
-        strikes = np.linspace(self.spot / 2, self.spot * 2, 50)
-        maturities = np.linspace(self.option_data["Maturity"].min(), self.option_data["Maturity"].max(), 50)
-        price_surface = np.zeros((len(strikes), len(maturities)))
-
-        for i, K in enumerate(strikes):
-            for j, T in enumerate(maturities):
-                try:
-                    price_surface[i, j] = self._option_price(K, T)
-                except Exception:
-                    price_surface[i, j] = np.nan
-
-        X, Y = np.meshgrid(maturities * 252, (strikes / self.spot) * 100)
-        fig = plt.figure(figsize=(12, 8))
-        ax = fig.add_subplot(111, projection="3d")
-        surf = ax.plot_surface(X, Y, price_surface, cmap="plasma", edgecolor="k", alpha=0.8)
-        
-        market_strikes = (self.option_data["Strike"] / self.spot) * 100
-        market_maturities = self.option_data["Maturity"] * 252
-        market_prices = [self._option_price(row["Strike"], row["Maturity"]) for _, row in self.option_data.iterrows()]
-        ax.scatter(market_maturities, market_strikes, market_prices, color="red", label="Market options", s=20)
-
-        cbar = fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10)
-        cbar.set_label("Call Price", fontsize=12)
-        ax.set_xlabel("Maturity (days)", fontsize=12, labelpad=10)
-        ax.set_ylabel("Moneyness (% ATM)", fontsize=12, labelpad=10)
-        ax.set_zlabel("Call Price", fontsize=12, labelpad=10)
-        ax.set_title("Option Price Surface", fontsize=14, fontweight="bold")
-        ax.legend(fontsize=10)
-        ax.grid(True, linestyle="--", alpha=0.5)
-        plt.tight_layout()
-        plt.show()

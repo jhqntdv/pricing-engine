@@ -1,24 +1,53 @@
 import time
-import numpy as np
-from datetime import datetime, timedelta
-
-from kernel.tools import ObservationFrequency, Model, CalendarConvention, RateCurveType
-from kernel.models.pricing_engines.enum_pricing_engine import PricingEngineType
-from kernel.products.structured_products.autocall_products import Phoenix
-from kernel.products.options.vanilla_options import EuropeanCallOption, EuropeanPutOption
-from kernel.products.options.barrier_options import DownAndInCallOption
-from kernel.products.options.path_dependent_options import AsianCallOption
-from kernel.products.options.american_options import AmericanCallOption, AmericanPutOption
-from kernel.products.rate.bond import ZeroCouponBond, CouponBond
-from kernel.products.rate.vanilla_swap import InterestRateSwap
+from kernel.market_data.data_loader import MarketDataLoader
+from kernel.market_data.market import Market
+from kernel.market_data.volatility_surface.enums_volatility import VolatilitySurfaceType
+from kernel.market_data.rate_curve_data.enums_interpolators import InterpolationType
+from kernel.tools import CalendarConvention, ObservationFrequency, RateCurveType, Model
 from utils.pricing_settings import PricingSettings
 from kernel.pricing_launcher import PricingLauncher
-from kernel.market_data import Market, VolatilitySurfaceType
-from kernel.market_data.data_loader import MarketDataLoader
-from kernel.market_data.rate_curve_data.enums_interpolators import InterpolationType
+from kernel.models.pricing_engines.enum_pricing_engine import PricingEngineType
 
-def run_examples():
-    # Common Settings
+# Products
+from kernel.products.options.vanilla_options import EuropeanCallOption, EuropeanPutOption
+from kernel.products.options.barrier_options import DownAndInCallOption, UpAndOutPutOption
+from kernel.products.options.binary_options import BinaryCallOption
+from kernel.products.options.path_dependent_options import AsianCallOption, LookbackPutOption
+from kernel.products.options_strategies.options_strategies import Straddle, BullSpread
+from kernel.products.options.american_options import AmericanCallOption, BermudanPutOption
+from kernel.products.structured_products.autocall_products import Phoenix, Eagle
+from kernel.products.rate.bond import ZeroCouponBond, CouponBond
+from kernel.products.rate.vanilla_swap import InterestRateSwap
+from datetime import datetime
+
+def print_result(name, result, t_elapsed):
+    print(f"> {name}")
+    print(f"  Time taken: {t_elapsed:.4f}s")
+    print(f"  Price:      {result.price:.4f}")
+    if result.std_dev is not None:
+        print(f"  Std Dev:    {result.std_dev:.4f}")
+        print(f"  95% CI:     [{result.lower_bound:.4f}, {result.upper_bound:.4f}]")
+    else:
+        print("  Std Dev:    N/A (Analytical / Deterministic)")
+        print("  95% CI:     N/A")
+    if result.greeks:
+        print(f"  Greeks:     {result.greeks}")
+    else:
+        print("  Greeks:     None")
+    
+    if hasattr(result, 'coupon_callable') and result.coupon_callable is not None:
+        print(f"  Coupon Call: {result.coupon_callable}")
+    
+    if hasattr(result, 'rate') and result.rate is not None:
+        print(f"  Rate:       {result.rate:.4f}")
+    print("-" * 60)
+
+def main():
+    print("=" * 60)
+    print("INITIALIZING MARKET DATA (Rates, Volatility Surface)")
+    print("=" * 60)
+    
+    t0 = time.time()
     settings = PricingSettings()
     settings.underlying_name = "SPX"
     settings.rate_curve_type = RateCurveType.RF_US_TREASURY
@@ -27,17 +56,10 @@ def run_examples():
     settings.obs_frequency = ObservationFrequency.ANNUAL
     settings.model = Model.BLACK_SCHOLES
     settings.volatility_surface_type = VolatilitySurfaceType.SVI
-    settings.compute_greeks = False
-    
-    # 50,000 paths and 100 steps for accurate but reasonably fast Monte Carlo
-    settings.nb_paths = 50000  
+    settings.compute_greeks = True
+    settings.nb_paths = 10000  
     settings.nb_steps = 100
-    
-    print("=" * 60)
-    print("INITIALIZING MARKET DATA (Rates, Volatility Surface)")
-    print("=" * 60)
-    t0 = time.time()
-    
+
     data_loader = MarketDataLoader()
     underlying_df = data_loader.get_underlying_info(settings.underlying_name)
     options_df = data_loader.get_option_data(settings.underlying_name)
@@ -60,91 +82,58 @@ def run_examples():
     spot = market.underlying_asset.last_price
     print(f"Current Underlying Spot Price: {spot:.2f}\n")
     
-    today = datetime.today()
-    
-    # 3-4 Examples per Engine Type
-    examples = {
-        PricingEngineType.MC: [
-            ("European Call Option", EuropeanCallOption(maturity=1.0, strike=spot)),
-            ("European Put Option", EuropeanPutOption(maturity=1.0, strike=spot)),
-            ("Asian Call Option", AsianCallOption(maturity=1.0, strike=spot)),
-            ("Down-And-In Call (Barrier=80%)", DownAndInCallOption(maturity=1.0, strike=spot, barrier=spot*0.8))
-        ],
-        PricingEngineType.AMERICAN_MC: [
-            ("American Call Option", AmericanCallOption(maturity=1.0, strike=spot)),
-            ("American Put Option", AmericanPutOption(maturity=1.0, strike=spot))
-        ],
-        PricingEngineType.CALLABLE_MC: [
-            ("Phoenix Autocall (3Y)", Phoenix(
-                maturity=3.0, 
-                observation_frequency=ObservationFrequency.ANNUAL, 
-                capital_barrier=60, 
-                autocall_barrier=100, 
-                coupon_barrier=80, 
-                coupon_rate=5.0
-            ))
-        ],
-        PricingEngineType.RATE: [
-            ("Zero Coupon Bond (1Y)", ZeroCouponBond(
-                issue_date=today, 
-                maturity=today + timedelta(days=365), 
-                calendar_convention=CalendarConvention.ACT_360,
-                notional=1000,
-                ytm=0.04
-            )),
-            ("Coupon Bond (5Y, 4% coupon)", CouponBond(
-                issue_date=today, 
-                maturity=today + timedelta(days=365*5), 
-                calendar_convention=CalendarConvention.ACT_360,
-                notional=1000, 
-                coupon_rate=0.04, 
-                frequency=2,
-                ytm=0.045
-            )),
-            ("Interest Rate Swap (2Y)", InterestRateSwap(
-                issue_date=today, 
-                maturity=today + timedelta(days=365*2), 
-                calendar_convention=CalendarConvention.ACT_360,
-                notional=10000, 
-                fixed_rate=0.03, 
-                float_spread=0.0, 
-                frequency=1
-            ))
-        ]
-    }
-    
-    total_time = 0
-    for engine_type, products in examples.items():
-        print("=" * 60)
-        print(f"ENGINE: {engine_type.name}")
-        print("=" * 60)
-        settings.pricing_engine_type = engine_type
-        launcher = PricingLauncher(pricing_settings=settings, market=market)
-        
-        for name, product in products:
-            t_start = time.time()
-            res = launcher.calculate(product)
-            t_end = time.time()
-            elapsed = t_end - t_start
-            total_time += elapsed
-            
-            print(f"> {name}")
-            print(f"  Time taken: {elapsed:.4f}s")
-            
-            if res.price is not None:
-                print(f"  Price:      {res.price:.4f}")
-            else:
-                print("  Price:      N/A")
-                
-            if res.std_dev is not None and res.std_dev > 0:
-                print(f"  Std Dev:    {res.std_dev:.4f}")
-                print(f"  95% CI:     [{res.lower_bound:.4f}, {res.upper_bound:.4f}]")
-            else:
-                print("  Std Dev:    N/A (Analytical / Deterministic)")
-            print("-" * 40)
-        print()
-        
-    print(f"Total Pricing Time (excluding market init): {total_time:.4f} seconds")
+    launcher = PricingLauncher(pricing_settings=settings, market=market)
 
-if __name__ == '__main__':
-    run_examples()
+    products = [
+        ("ENGINE: MC - Vanilla & Exotics", [
+            ("European Call", EuropeanCallOption(strike=spot, maturity=1.0)),
+            ("European Put", EuropeanPutOption(strike=spot*0.9, maturity=1.0)),
+            ("Down-And-In Call", DownAndInCallOption(strike=spot, maturity=1.0, barrier=spot*0.8)),
+            ("Up-And-Out Put", UpAndOutPutOption(strike=spot, maturity=1.0, barrier=spot*1.2)),
+            ("Cash-Or-Nothing Call", BinaryCallOption(strike=spot, maturity=1.0, coupon=100)),
+            ("Asian Call", AsianCallOption(strike=spot, maturity=1.0)),
+            ("Lookback Put", LookbackPutOption(strike=spot, maturity=1.0)),
+            ("Straddle", Straddle(strike=spot, maturity=1.0, position_call=True, position_put=True)),
+            ("Bull Spread", BullSpread(maturity=1.0, strike_low=spot*0.9, strike_high=spot*1.1, position_low=True, position_high=False)),
+        ]),
+        ("ENGINE: AMERICAN_MC - Early Exercise", [
+            ("American Call", AmericanCallOption(strike=spot, maturity=1.0)),
+            ("Bermudan Put", BermudanPutOption(strike=spot, maturity=1.0, exercise_times=[0.25, 0.5, 0.75, 1.0])),
+        ]),
+        ("ENGINE: CALLABLE_MC - Structured Products", [
+            ("Phoenix Autocall", Phoenix(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_barrier=0.8, coupon_rate=0.08)),
+            ("Eagle Autocall", Eagle(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_rate=0.08)),
+        ]),
+        ("ENGINE: RATE - Fixed Income", [
+            ("Zero Coupon Bond (1Y)", ZeroCouponBond(notional=100.0, issue_date=datetime.now(), maturity=datetime.now().replace(year=datetime.now().year + 1), calendar_convention=CalendarConvention.ACT_360, ytm=0.03)),
+            ("Coupon Bond (5Y)", CouponBond(notional=100.0, issue_date=datetime.now(), maturity=datetime.now().replace(year=datetime.now().year + 5), coupon_rate=0.04, frequency=2, calendar_convention=CalendarConvention.ACT_360, ytm=0.03)),
+            ("Interest Rate Swap (2Y)", InterestRateSwap(notional=10000.0, issue_date=datetime.now(), maturity=datetime.now().replace(year=datetime.now().year + 2), calendar_convention=CalendarConvention.ACT_360, fixed_rate=0.03, frequency=2)),
+        ])
+    ]
+
+    total_t0 = time.time()
+    for category, items in products:
+        print("=" * 60)
+        print(category)
+        print("=" * 60)
+        
+        # Determine engine type from category name
+        if "MC - Vanilla" in category:
+            settings.pricing_engine_type = PricingEngineType.MC
+        elif "AMERICAN_MC" in category:
+            settings.pricing_engine_type = PricingEngineType.AMERICAN_MC
+        elif "CALLABLE_MC" in category:
+            settings.pricing_engine_type = PricingEngineType.CALLABLE_MC
+        elif "RATE" in category:
+            settings.pricing_engine_type = PricingEngineType.RATE
+            
+        for name, prod in items:
+            start = time.time()
+            res = launcher.calculate(prod)
+            elapsed = time.time() - start
+            print_result(name, res, elapsed)
+
+    print(f"\nTotal Pricing Time (excluding market init): {time.time() - total_t0:.4f} seconds")
+
+if __name__ == "__main__":
+    main()

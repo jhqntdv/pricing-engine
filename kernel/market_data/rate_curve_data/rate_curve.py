@@ -1,9 +1,7 @@
 import re
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from typing import Tuple
-import seaborn as sns
 
 class RateCurve:
     """
@@ -43,23 +41,4 @@ class RateCurve:
             float: Interpolated yield rate.
         """
         return self.interpolator.interpolate(maturity)
-
-    def display_curve(self) -> None:
-        """
-        Plots the yield curve based on market data and the chosen interpolated yield.
-        """
-        maturities = np.linspace(0, 30, 500)
-        yield_curve = np.array([self.get_rate(mat) for mat in maturities])
-
-        sns.set(style="whitegrid")
-        palette = sns.color_palette("coolwarm", 2)
-        plt.figure(figsize=(10, 6))
-        plt.scatter(self.data_curve['Maturity'], self.data_curve['Rate'], color=palette[0], label='Market yields', zorder=5)
-        plt.plot(maturities, yield_curve, label='Interpolated yield curve', color=palette[1], linewidth=2)
-        plt.xlabel('Maturity (Years)', fontsize=12)
-        plt.ylabel('Yield (%)', fontsize=12)
-        plt.title('Implied Yield Curve & Market Rate Points', fontsize=14, fontweight='bold')
-        plt.legend(fontsize=10)
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.tight_layout()
-        plt.show()
+

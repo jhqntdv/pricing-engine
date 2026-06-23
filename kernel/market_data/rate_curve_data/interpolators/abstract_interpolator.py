@@ -1,6 +1,10 @@
 import numpy as np
 from abc import ABC, abstractmethod
 
+class CalibrationError(Exception):
+    """Exception raised when an interpolator fails to calibrate."""
+    pass
+
 class Interpolator(ABC):
 
     def __init__(self, maturities: np.ndarray, rates: np.ndarray):

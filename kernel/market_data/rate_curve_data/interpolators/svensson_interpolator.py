@@ -1,4 +1,4 @@
-from .abstract_interpolator import Interpolator
+from .abstract_interpolator import Interpolator, CalibrationError
 from scipy.optimize import curve_fit
 import numpy as np
 
@@ -58,11 +58,16 @@ class SvenssonInterpolator(Interpolator):
         Returns:
             np.ndarray: Estimated parameters (beta0, beta1, beta2, beta3, tau1, tau2).
         """
+        if len(self.maturities) < 6:
+            raise CalibrationError("Insufficient data points for Svensson calibration (requires at least 6).")
         p0 = [0.02, -0.02, 0.02, 0.01, 1.0, 2.0] 
-        bounds = ([0, -np.inf, -np.inf, -np.inf, 0.01, 0.01], [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf])
+        bounds = ([-np.inf, -np.inf, -np.inf, -np.inf, 0.01, 0.01], [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf])
         
-        params, _ = curve_fit(self._svensson, self.maturities, self.rates, p0=p0, bounds=bounds)
-        self.params =  np.array(params)
+        try:
+            params, _ = curve_fit(self._svensson, self.maturities, self.rates, p0=p0, bounds=bounds)
+            self.params = np.array(params)
+        except Exception as e:
+            raise CalibrationError(f"Svensson calibration failed: {str(e)}")
 
     def interpolate(self, t: float) -> float:
         """

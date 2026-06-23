@@ -50,11 +50,11 @@ structured-products-engine-only/
 │   ├── pricing_settings.py          # PricingSettings 設定類別
 │   ├── pricing_results.py           # PricingResults 輸出類別
 │   └── day_counter.py               # 日曆計息工具
-├── data/                            # 市場資料檔案 (Excel)
+├── data/                            # 市場資料檔案 (CSV)
 │   ├── option_data/                 # 各標的之選擇權隱含波動率資料
 │   ├── yield_curves/                # 殖利率曲線資料
-│   └── underlying_data.xlsx         # 標的資產基本資料
-└── main.py                          # 範例執行腳本
+│   └── underlying_data.csv          # 標的資產基本資料
+└── examples.py                      # 範例執行腳本
 ```
 
 ---
@@ -406,12 +406,12 @@ MC 引擎的核心記憶體配置來自 Euler 離散化方案中的 NumPy 陣列
 MC 定價屬於 **CPU-bound** 運算（非 I/O-bound），不適合用 `async/await`。建議搭配 **Celery** 或類似的任務佇列 (Task Queue)，將定價請求分派至背景 Worker 執行。
 
 ### 市場資料快取 (Market Data Caching)
-`Market` 物件的初始化需要讀取 `.xlsx` 檔案並校準波動度曲面，這一步驟耗時約 1-3 秒。在生產環境中，建議**預先建立 Market 物件並快取**，避免每次 API 請求重新初始化。
+`Market` 物件的初始化需要讀取 `.csv` 檔案並校準波動度曲面，這一步驟耗時約 1-3 秒。在生產環境中，建議**預先建立 Market 物件並快取**，避免每次 API 請求重新初始化。
 
 ### 支援的標的 (Supported Underlyings)
-目前僅 `SPX` 具備完整的波動度曲面資料 (`data/option_data/option_data_SPX.xlsx`)。若需新增其他標的，需：
-1. 在 `data/underlying_data.xlsx` 新增一筆標的資料列。
-2. 在 `data/option_data/` 新增對應的 `option_data_{TICKER}.xlsx` 檔案（格式：Maturity × Strike 的隱含波動率矩陣）。
+目前僅 `SPX` 具備完整的波動度曲面資料 (`data/option_data/option_data_SPX.csv`)。若需新增其他標的，需：
+1. 在 `data/underlying_data.csv` 新增一筆標的資料列。
+2. 在 `data/option_data/` 新增對應的 `option_data_{TICKER}.csv` 檔案（格式：Maturity × Strike 的隱含波動率矩陣）。
 
 ### API Payload 設計建議
 
@@ -451,3 +451,40 @@ MC 定價屬於 **CPU-bound** 運算（非 I/O-bound），不適合用 `async/aw
 ```
 
 此設計清晰劃分了「系統定價參數 (`engine_settings`)」與「商品實體參數 (`product`)」，方便 DevOps 團隊建立對應的 Pydantic Model 進行資料驗證。
+
+---
+
+## 9. Appendix: 波動率曲面模型比較 (SVI vs SSVI)
+
+> **Developer Note:** The following section is intended for quantitative analysts (Quants) who want to understand the underlying mathematics of the volatility surface models. **Web developers and engineers can safely skip this section** and continue working with the APIs as usual.
+
+本文件旨在比較 **SVI (Stochastic Volatility Inspired)** 與 **SSVI (Surface Stochastic Volatility Inspired)** 兩種波動率曲面模型的數學特性、配適能力，以及如何快速診斷模型失效的特徵。
+
+### 模型核心差異比較表
+
+| 比較維度 | SVI 模型 (Stochastic Volatility Inspired) | SSVI 模型 (Surface Stochastic Volatility Inspired) |
+| :--- | :--- | :--- |
+| **配適市場價格能力** | **極高**。針對每個到期日（Time Slice）獨立校準，擁有大量的自由度，能完美擊中單一到期日的所有市場報價。 | **中高**。採用全局校準（Global Fit），為了維持整體曲面的無套利數學限制，會犧牲部分的單點配適精準度。 |
+| **曲面平滑度** | **較差（時間維度上）**。僅在履約價（Strike）維度平滑。不同到期日之間的參數是獨立插值出來的，極易在時間軸上產生「扭曲」或不平滑的突變。 | **極致平滑**。由單一 3D 數學方程式定義，不論在履約價或時間維度上，皆保證絕對的平滑且無任何不連續點。 |
+| **參數數量** | **龐大**。每個到期日皆有 5 個獨立參數 ($a, b, \rho, m, \sigma$)。 | **極少**。僅依賴 3 個全局參數 ($\rho, \eta, \gamma$) 搭配 ATM 變異數骨架。 |
+| **無套利保證** | **無保證**。容易產生「日曆套利 (Calendar Arbitrage)」或「蝴蝶套利 (Butterfly Arbitrage)」，導致局部波動率 (Local Volatility) 崩潰出現 `NaN`。 | **絕對保證**。嚴格遵循 Gatheral 的無套利數學限制（如 $\eta(1+\|\rho\|) \le 2$），確保蒙地卡羅與 PDE 定價引擎的穩定性。 |
+| **最佳適用場景** | **選擇權造市商 (Market Making)**。必須精準打中當下的買賣價差。 | **結構型商品定價 (Structured Products)**。如 Phoenix Autocall，需要模擬長達 5 年的連續時間路徑，引擎的數學穩定性大於一切。 |
+
+### 如何快速診斷配適問題 (Fitting Issues)
+
+在檢視波動率曲面 (Volatility Surface) 或局部波動率 (Local Volatility) 圖表時，若出現以下特徵，即代表模型校準出現嚴重問題：
+
+**1. 蝴蝶套利 (Butterfly Arbitrage) - 局部波動率出現 NaN 或「隕石坑」**
+* **SVI 的問題：** 當優化器將參數 $b$ 推得太高，或 $\rho$ 過於極端時，選擇權的機率密度函數 (PDF) 會在數學上跌破零。
+* **視覺特徵：** 局部波動率曲面在深度價外 (Deep OTM) 的兩側區域會突然暴跌至零，甚至造成程式噴出 NaN 錯誤。
+* **SSVI 的解法：** 透過嚴格的不等式限制 $\eta(1+\|\rho\|) \le 2$ 完全根除此現象。
+
+**2. 日曆套利 (Calendar Arbitrage) - 波動率微笑曲線交叉**
+* **SVI 的問題：** 由於每個到期日是獨立校準的，可能導致 6 個月到期的總變異數在極端價外反而「小於」 3 個月到期的總變異數。這在物理意義上代表「時間倒流」。
+* **視覺特徵：** 將不同到期日的微笑曲線畫在同一張平面圖上時，兩條線在兩側發生「交叉 (Crossing)」。在計算 Dupire 局部波動率時，時間偏微分 $\partial w / \partial t$ 會變成負數並導致崩潰。
+* **SSVI 的解法：** SSVI 的數學構造保證了總變異數必定隨著時間嚴格遞增，確保曲線永遠不會交叉。
+
+**3. 外插平坦化 (The Extrapolation Flatline)**
+* **SVI 的問題：** 對於極短天期（如不到 1 週）或極長天期的定價，SVI 經常採用「平坦外插 (Flat Extrapolation)」，直接凍結最靠近的參數。
+* **視覺特徵：** 極短天期的微笑曲線看起來和 1 個月的曲線一模一樣，這會導致短天期的局部波動率瞬間掉到零。
+* **SSVI 的解法：** SSVI 的 ATM 變異數骨架 $\theta_t$ 靠近零時，模型數學上會自然地讓兩側尾部變得極度陡峭，完美還原真實市場中短天期選擇權的高偏態特性。
