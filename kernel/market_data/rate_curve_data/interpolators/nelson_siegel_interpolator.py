@@ -3,16 +3,14 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 class NelsonSiegelInterpolator(Interpolator):
-    """
-    Implements the Nelson-Siegel yield curve model for yield curve fitting and interpolation.
+    """Implements the Nelson-Siegel yield curve model for yield curve fitting and interpolation.
 
     This model provides a parsimonious representation of the yield curve using four parameters.
     It is widely used in fixed income markets to fit and interpolate interest rates across different maturities.
     """
 
     def __init__(self, maturities: np.ndarray, rates: np.ndarray):
-        """
-        Initializes the interpolator with observed market rates and calibrates the Nelson-Siegel model.
+        """Initializes the interpolator with observed market rates and calibrates the Nelson-Siegel model.
 
         Parameters:
             maturities (np.ndarray): A list or array of maturities (in years).
@@ -24,8 +22,7 @@ class NelsonSiegelInterpolator(Interpolator):
 
     @staticmethod
     def _nelson_siegel(t, beta0: float, beta1: float, beta2: float, tau: float ) -> float:
-        """
-        Computes the yield at a given maturity using the Nelson-Siegel model formula.
+        """Computes the yield at a given maturity using the Nelson-Siegel model formula.
 
         Parameters:
             t (float): Maturity in years.
@@ -38,8 +35,7 @@ class NelsonSiegelInterpolator(Interpolator):
             (1 - np.exp(-t / tau)) / (t / tau) - np.exp(-t / tau))
 
     def calibrate(self) -> np.ndarray:
-        """
-        Calibrates the Nelson-Siegel parameters by fitting the model to observed yield data.
+        """Calibrates the Nelson-Siegel parameters by fitting the model to observed yield data.
 
         Returns:
             np.ndarray: Estimated parameters [beta0, beta1, beta2, tau].
@@ -55,8 +51,7 @@ class NelsonSiegelInterpolator(Interpolator):
             raise CalibrationError(f"Nelson-Siegel calibration failed: {str(e)}")
 
     def interpolate(self, t: float) -> float:
-        """
-        Interpolates the yield for a given maturity using the calibrated Nelson-Siegel model.
+        """Interpolates the yield for a given maturity using the calibrated Nelson-Siegel model.
 
         Parameters:
             t (float): Maturity at which to estimate the yield.

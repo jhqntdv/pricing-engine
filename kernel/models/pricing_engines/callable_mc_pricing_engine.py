@@ -11,19 +11,32 @@ import numpy as np
 
 
 class CallableMCPricingEngine(MCPricingEngine):
-    """
-    A Monte Carlo pricing engine for callable financial derivatives.
+    """A Monte Carlo pricing engine for callable financial derivatives.
 
     This class uses Monte Carlo simulation to compute the price of derivatives
     and can be extended to compute Greeks or other risk measures.
     """
 
     def __init__(self, market: Market, settings: PricingSettings) -> None: # type: ignore
+        """Initialize the Callable MC pricing engine.
+
+        Args:
+            market: The market data containing underlying and rates.
+            settings: Configuration settings for the simulation.
+        """
         super().__init__(market, settings)
         self.obs_frequency = settings.obs_frequency
         self.compute_coupon = settings.compute_callable_coupons
 
     def calculate_structured_product(self, derivative: AbstractAutocall) -> PricingResults: 
+        """Calculate the price or coupon for a structured callable product.
+
+        Args:
+            derivative: The autocallable structured product.
+
+        Returns:
+            The pricing results containing the computed coupon or price.
+        """
         if self.compute_coupon:
             result = PricingResults()
             if hasattr(derivative, "initial_spot") and getattr(derivative, "initial_spot", None) is None:
@@ -38,8 +51,7 @@ class CallableMCPricingEngine(MCPricingEngine):
             return super().get_result(derivative)
 
     def get_coupon(self, derivative: 'CallableProduct', process: StochasticProcess, epsilon: float = 1e-2, max_iter: int = 25, target_price: float = 100) -> float: # type: ignore
-        """
-        Computes the coupon of the structured product such that the price equals the target price (e.g., initial capital).
+        """Computes the coupon of the structured product such that the price equals the target price (e.g., initial capital).
 
         Parameters:
             derivative (CallableProduct): The derivative for which to compute the coupon.

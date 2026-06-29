@@ -15,8 +15,7 @@ import copy
 
 
 class Market:
-    """
-    Represents a financial market environment, providing tools to fetch and use yield curves,
+    """Represents a financial market environment, providing tools to fetch and use yield curves,
     compute interest rates, and discount factors.
 
     Attributes:
@@ -36,8 +35,7 @@ class Market:
                  volatility_surface_type: VolatilitySurfaceType = VolatilitySurfaceType.SVI,
                  calendar_convention: CalendarConvention = CalendarConvention.ACT_360,
                  obs_frequency: ObservationFrequency = ObservationFrequency.ANNUAL):
-        """
-        Initializes the Market object with specified configurations and injected data.
+        """Initializes the Market object with specified configurations and injected data.
 
         Parameters:
             underlying_name (str): Ticker of the underlying asset
@@ -70,8 +68,7 @@ class Market:
 
     @staticmethod
     def _convert_maturities(maturity: str) -> float:
-        """
-        Converts a maturity string (e.g., '10Y', '6M', '3W') into a numerical value in years.
+        """Converts a maturity string (e.g., '10Y', '6M', '3W') into a numerical value in years.
 
         Parameters:
             maturity (str): Maturity in standard financial format (e.g., '10Y', '6M', '3W').
@@ -95,8 +92,7 @@ class Market:
             raise ValueError(f"Unrecognized unit: {unit}")
         
     def _build_yield_curves(self, data_curve: pd.DataFrame, bump: float = 0.0):
-        """
-        Builds and calibrates the rate curve from the provided DataFrame.
+        """Builds and calibrates the rate curve from the provided DataFrame.
         """
         required_columns = ["Maturity", "Rate"]
         missing_columns = [col for col in required_columns if col not in data_curve.columns]
@@ -112,8 +108,7 @@ class Market:
         self.rate_curve = rate_curve
 
     def _build_underlying_info(self, asset_info: pd.DataFrame):
-        """
-        Initializes the underlying asset data from the provided DataFrame row.
+        """Initializes the underlying asset data from the provided DataFrame row.
         """
         if asset_info.empty:
             raise ValueError(f"No data found for security name: {self.underlying_asset.name}")
@@ -121,8 +116,7 @@ class Market:
         self.underlying_asset.load_underlying_info(asset_info)
 
     def _build_volatility_surface(self, option_data: pd.DataFrame, bump: float = 0.0):
-        """
-        Builds and calibrates the volatility surface from the provided Option DataFrame.
+        """Builds and calibrates the volatility surface from the provided Option DataFrame.
         """
         required_columns = ["Maturity", "Implied Volatility", "Strike"]
         missing_columns = [col for col in required_columns if col not in option_data.columns]
@@ -150,8 +144,7 @@ class Market:
         self.volatility_surface = volatility_surface
 
     def get_rate(self, maturity: float) -> float:
-        """
-        Retrieves the interest rate for a given maturity.
+        """Retrieves the interest rate for a given maturity.
 
         Parameters:
             maturity (float): Desired maturity in years
@@ -164,8 +157,7 @@ class Market:
         return self.rate_curve.get_rate(maturity) / 100
     
     def get_fwd_rate(self, start: float, end: float) -> float:
-        """
-        Computes the implied forward rate between two maturities.
+        """Computes the implied forward rate between two maturities.
 
         Parameters:
             start (float): Start maturity in years (e.g. 1.0 for 1 year)
@@ -189,8 +181,7 @@ class Market:
         return fwd_rate
     
     def get_discount_factor(self, maturity: float) -> float:
-        """
-        Computes the discount factor for a given maturity using the interpolated yield.
+        """Computes the discount factor for a given maturity using the interpolated yield.
 
         Parameters:
             maturity (float): Desired maturity in years
@@ -201,8 +192,7 @@ class Market:
         rate = self.get_rate(maturity)
         return np.exp(-rate * maturity)
     def get_fwd_discount_factor(self, start: float, end: float) -> float:
-        """
-        Computes the forward discount factor between two future dates.
+        """Computes the forward discount factor between two future dates.
 
         Parameters:
             start (float): Start maturity in years (e.g., 1.0 for 1 year)
@@ -224,8 +214,7 @@ class Market:
         return df_end / df_start
 
     def get_volatility(self, strike: float, maturity: float) -> float:
-        """
-        Get the volatility interpolated by the volatility surface at this specific point (Strike * Maturity).
+        """Get the volatility interpolated by the volatility surface at this specific point (Strike * Maturity).
         Params:
             strike (float): option strike
             maturity (float): option maturity in year
@@ -238,11 +227,27 @@ class Market:
         return self.volatility_surface.get_volatility(strike, maturity)
     
     def bump_volatility(self, bump: float) -> "Market":
+        """Create a new Market instance with bumped volatility.
+
+        Args:
+            bump: The absolute bump to apply to implied volatilities.
+
+        Returns:
+            A new Market instance with the bumped volatility surface.
+        """
         bumped_market = copy.deepcopy(self)
         bumped_market._build_volatility_surface(bumped_market._raw_option_data, bump=bump)
         return bumped_market
     
     def bump_flat_yield_curve(self, bump: float) -> "Market":
+        """Create a new Market instance with a bumped flat yield curve.
+
+        Args:
+            bump: The absolute bump to apply to the yield curve rates.
+
+        Returns:
+            A new Market instance with the bumped yield curve.
+        """
         bumped_market = copy.deepcopy(self)
         bumped_market._build_yield_curves(bumped_market._raw_yield_data, bump=bump)
         return bumped_market

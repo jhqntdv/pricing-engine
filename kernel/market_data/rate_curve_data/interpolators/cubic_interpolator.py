@@ -5,8 +5,7 @@ from scipy.interpolate import CubicSpline
 class CubicInterpolator(Interpolator):
 
     def __init__(self, maturities: np.ndarray, rates: np.ndarray):
-        """
-        Initializes the CubicInterpolator with market maturities and corresponding rates.
+        """Initializes the CubicInterpolator with market maturities and corresponding rates.
 
         Parameters:
             maturities (np.ndarray): List of bond maturities.
@@ -16,14 +15,12 @@ class CubicInterpolator(Interpolator):
         self.interpolator = None
 
     def calibrate(self):
-        """
-        Calibrates the CubicInterpolator by fitting the observed market rates.
+        """Calibrates the CubicInterpolator by fitting the observed market rates.
         """
         self.interpolator = CubicSpline(self.maturities, self.rates, bc_type='natural', extrapolate=True)
 
     def interpolate(self, t: float) -> float:
-        """
-        Interpolates the yield for a given maturity using the calibrated CubicSpline model.
+        """Interpolates the yield for a given maturity using the calibrated CubicSpline model.
 
         Parameters:
             t (float): Maturity at which to estimate the yield.

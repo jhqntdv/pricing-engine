@@ -2,11 +2,15 @@ import os
 import pandas as pd
 
 class MarketDataLoader:
-    """
-    Data Access Layer to abstract all file I/O operations from the Market kernel.
+    """Data Access Layer to abstract all file I/O operations from the Market kernel.
     It natively loads and processes flat CSV formats.
     """
     def __init__(self, base_dir: str = None):
+        """Initialize the MarketDataLoader.
+
+        Args:
+            base_dir: Base directory for data. Defaults to 'data' in project root.
+        """
         if base_dir is None:
             # Default to the data directory in the project root
             self.base_dir = os.path.join(
@@ -17,8 +21,7 @@ class MarketDataLoader:
             self.base_dir = base_dir
 
     def get_underlying_info(self, ticker: str) -> pd.DataFrame:
-        """
-        Loads the underlying data from a CSV and filters for the specified ticker.
+        """Loads the underlying data from a CSV and filters for the specified ticker.
         """
         file_path = os.path.join(self.base_dir, "underlying_data.csv")
         if not os.path.exists(file_path):
@@ -32,8 +35,7 @@ class MarketDataLoader:
         return asset_info
 
     def get_yield_curve(self, rate_curve_type_value: str) -> pd.DataFrame:
-        """
-        Loads the yield curve data. Prioritizes .csv format.
+        """Loads the yield curve data. Prioritizes .csv format.
         """
         base_name = os.path.splitext(rate_curve_type_value)[0]
         file_path = os.path.join(self.base_dir, "yield_curves", f"{base_name}.csv")
@@ -44,8 +46,7 @@ class MarketDataLoader:
         raise FileNotFoundError(f"Yield curve file not found: {file_path}")
 
     def get_option_data(self, ticker: str) -> pd.DataFrame:
-        """
-        Loads flat option CSV data (e.g., options_AAPL.csv or options_SPX.csv).
+        """Loads flat option CSV data (e.g., options_AAPL.csv or options_SPX.csv).
         Handles both comma and semicolon separators, and standardizes column names.
         """
         file_path = os.path.join(self.base_dir, "option_data", f"options_{ticker}.csv")

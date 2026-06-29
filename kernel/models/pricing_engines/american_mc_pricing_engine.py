@@ -14,18 +14,35 @@ import pandas as pd
 
 
 class AmericanMCPricingEngine(MCPricingEngine):
-    """
-    A Monte Carlo pricing engine for classic financial derivatives (no barrier, no asian payoff ...)
+    """A Monte Carlo pricing engine for classic financial derivatives (no barrier, no asian payoff ...)
 
     This class uses Monte Carlo simulation to compute the price of derivatives
     and can be extended to compute Greeks or other risk measures.
     """
     def __init__(self, market: Market, settings: PricingSettings) -> None: # type: ignore
+        """Initialize the American Monte Carlo pricing engine.
+
+        Args:
+            market: The market data.
+            settings: The pricing settings.
+        """
         super().__init__(market, settings)
 
 
 
     def _get_price(self, derivative: AmericanAbstractOption, stochastic_process: StochasticProcess, current_market: Market = None, pre_simulated_paths: np.ndarray = None, return_std: bool = False):
+        """Calculate the price of an American-style option using Longstaff-Schwartz.
+
+        Args:
+            derivative: The American option to evaluate.
+            stochastic_process: The simulated stochastic process.
+            current_market: Overridden market data for simulations.
+            pre_simulated_paths: Optional paths to use directly.
+            return_std: Whether to return the standard deviation.
+
+        Returns:
+            The option price (and standard deviation if requested).
+        """
         if current_market is None:
             current_market = self.market
         

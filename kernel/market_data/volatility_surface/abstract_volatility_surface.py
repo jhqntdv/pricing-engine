@@ -4,15 +4,13 @@ from abc import ABC, abstractmethod
 from kernel.market_data import RateCurve
 
 class AbstractVolatilitySurface(ABC):
-    """
-    Abstract base class for all volatility surfaces.
+    """Abstract base class for all volatility surfaces.
     It encapsulates shared attributes, calibration status, and visualization methods
     to ensure DRY (Don't Repeat Yourself) principles across all models.
     """
 
     def __init__(self, option_data: pd.DataFrame, rate_curve: RateCurve):
-        """
-        Initializes the base surface with market data and rate curve.
+        """Initializes the base surface with market data and rate curve.
         """
         self.option_data = option_data
         self.rate_curve = rate_curve

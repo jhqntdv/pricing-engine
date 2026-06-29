@@ -5,6 +5,12 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from typing import Tuple
 
+from kernel.exceptions import (
+    UnsupportedProductError,
+    InvalidProductInputError,
+    IndeterminateValuationError
+)
+
 from kernel.models.pricing_engines.abstract_pricing_engine import AbstractPricingEngine
 from kernel.market_data.market import Market
 from utils.pricing_settings import PricingSettings
@@ -16,16 +22,32 @@ from kernel.models.stochastic_processes import StochasticProcess
 from kernel.tools import CalendarConvention
 
 class DiscountingPricingEngine(AbstractPricingEngine):
-    """
-    Pricing engine for interest rate products.
+    """Pricing engine for interest rate products.
     """
 
     def __init__(self, market: Market, settings: PricingSettings):
+        """Initialize the discounting pricing engine.
+
+        Args:
+            market: The market data containing the rate curves.
+            settings: The pricing settings.
+        """
         super().__init__(market)
         self.settings = settings
         self.valuation_date = settings.valuation_date
 
     def calculate_rate_product(self, derivative: AbstractRateProduct) -> PricingResults:
+        """Calculate the price and yield/rate of a rate product.
+
+        Args:
+            derivative: The rate product to price.
+
+        Returns:
+            The pricing results containing the price and rate.
+
+        Raises:
+            UnsupportedProductError: If the rate product sub-type is unknown.
+        """
         derivative.set_market(self.market)
         derivative.date = self.valuation_date if self.valuation_date is not None else derivative.start
 
@@ -34,7 +56,7 @@ class DiscountingPricingEngine(AbstractPricingEngine):
         elif isinstance(derivative, InterestRateSwap):
             price, rate = self._price_swap(derivative)
         else:
-            raise NotImplementedError("Rate product type not supported.")
+            raise UnsupportedProductError("DiscountingPricingEngine does not support unknown rate product sub-type.")
 
         derivative.price = price
         if hasattr(derivative, 'ytm'):
@@ -45,9 +67,20 @@ class DiscountingPricingEngine(AbstractPricingEngine):
         return PricingResults(price=price, rate=rate)
 
     def _price_bond(self, bond: AbstractBond) -> Tuple[float, float]:
+        """Price a bond and compute its yield to maturity (YTM).
+
+        Args:
+            bond: The bond to price.
+
+        Returns:
+            A tuple of (price, ytm).
+
+        Raises:
+            InvalidProductInputError: If neither price nor YTM is provided.
+        """
         if isinstance(bond, ZeroCouponBond):
             if bond.price is None and bond.ytm is None:
-                 raise ValueError('You must provide either ytm or the price')
+                 raise InvalidProductInputError("You must provide either ytm or the price")
             
             if bond.price is None:
                 t = (bond.end - bond.date).days / 365
@@ -63,7 +96,7 @@ class DiscountingPricingEngine(AbstractPricingEngine):
             
         elif isinstance(bond, CouponBond):
             if bond.price is None and bond.ytm is None:
-                 raise ValueError('You must provide either ytm or the price')
+                 raise InvalidProductInputError("You must provide either ytm or the price")
                  
             def _accrued_interest() -> float:
                 past_coupons = [c for c in bond.coupons if c <= bond.date]
@@ -108,6 +141,17 @@ class DiscountingPricingEngine(AbstractPricingEngine):
 
 
     def _price_swap(self, swap: InterestRateSwap) -> Tuple[float, float]:
+        """Price an interest rate swap and compute its par fixed rate.
+
+        Args:
+            swap: The swap to price.
+
+        Returns:
+            A tuple of (price, fixed_rate).
+
+        Raises:
+            IndeterminateValuationError: If the annuity is zero.
+        """
         def _get_annuities() -> float:
             annuities = 0
             prev_date = swap.start
@@ -147,7 +191,7 @@ class DiscountingPricingEngine(AbstractPricingEngine):
         if swap.fixed_rate is None:
             annuities = _get_annuities()
             if annuities == 0:
-                raise ZeroDivisionError("Annuities equal to 0, par rate indeterminate")
+                raise IndeterminateValuationError("Annuity is zero; par rate indeterminate")
             swap.fixed_rate = _float_leg_value() / (swap.notional * annuities)
 
         if swap.price is None:
@@ -161,13 +205,46 @@ class DiscountingPricingEngine(AbstractPricingEngine):
         return swap.price, swap.fixed_rate
 
     def calculate_option(self, derivative: 'AbstractOption') -> PricingResults:
-        raise NotImplementedError("DiscountingPricingEngine does not support options.")
+        """Calculate the price of an option (Unsupported).
+
+        Args:
+            derivative: The option.
+
+        Raises:
+            UnsupportedProductError: Engine does not support options.
+        """
+        raise UnsupportedProductError("DiscountingPricingEngine does not support options.")
 
     def calculate_strategy(self, derivative: 'AbstractOptionStrategy') -> PricingResults:
-        raise NotImplementedError("DiscountingPricingEngine does not support strategies.")
+        """Calculate the price of an option strategy (Unsupported).
+
+        Args:
+            derivative: The strategy.
+
+        Raises:
+            UnsupportedProductError: Engine does not support strategies.
+        """
+        raise UnsupportedProductError("DiscountingPricingEngine does not support strategies.")
 
     def calculate_structured_product(self, derivative: 'AbstractStructuredProduct') -> PricingResults:
-        raise NotImplementedError("DiscountingPricingEngine does not support structured products.")
+        """Calculate the price of a structured product (Unsupported).
+
+        Args:
+            derivative: The structured product.
+
+        Raises:
+            UnsupportedProductError: Engine does not support structured products.
+        """
+        raise UnsupportedProductError("DiscountingPricingEngine does not support structured products.")
 
     def _get_price(self, derivative: AbstractRateProduct, process : StochasticProcess) -> float:
+        """Get the price (abstract engine hook).
+
+        Args:
+            derivative: The rate product.
+            process: The stochastic process.
+
+        Returns:
+            The product price.
+        """
         return derivative.price

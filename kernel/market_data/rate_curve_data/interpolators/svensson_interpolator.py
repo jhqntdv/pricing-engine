@@ -4,8 +4,7 @@ import numpy as np
 
 
 class SvenssonInterpolator(Interpolator):
-    """
-    Implements the Svensson model for yield curve interpolation, an extension of the Nelson-Siegel model.
+    """Implements the Svensson model for yield curve interpolation, an extension of the Nelson-Siegel model.
     The Svensson model provides a smooth parametric representation of the yield curve using six parameters.
 
     The yield curve is defined as:
@@ -19,8 +18,7 @@ class SvenssonInterpolator(Interpolator):
     """
 
     def __init__(self, maturities: np.ndarray, rates: np.ndarray):
-        """
-        Initializes the SvenssonInterpolator with market maturities and corresponding rates.
+        """Initializes the SvenssonInterpolator with market maturities and corresponding rates.
 
         Parameters:
             maturities (np.ndarray): List of bond maturities.
@@ -32,8 +30,7 @@ class SvenssonInterpolator(Interpolator):
 
     @staticmethod
     def _svensson(t, beta0: float, beta1: float, beta2: float, beta3: float, tau1: float, tau2: float) -> float:
-        """
-        Computes the Svensson yield curve function at a given maturity t.
+        """Computes the Svensson yield curve function at a given maturity t.
 
         Parameters:
             t (float): Maturity at which to compute the yield.
@@ -42,7 +39,6 @@ class SvenssonInterpolator(Interpolator):
         Returns:
             float: Yield rate for the given maturity.
         """
-
         term1 = beta1 * (1 - np.exp(-t / tau1)) / (t / tau1)
         term2 = beta2 * ((1 - np.exp(-t / tau1)) / (t / tau1) - np.exp(-t / tau1))
         term3 = beta3 * ((1 - np.exp(-t / tau2)) / (t / tau2) - np.exp(-t / tau2))
@@ -50,8 +46,7 @@ class SvenssonInterpolator(Interpolator):
         return beta0 + term1 + term2 + term3
 
     def calibrate(self) -> np.ndarray:
-        """
-        Calibrates the Svensson model parameters by fitting the yield curve to observed market rates.
+        """Calibrates the Svensson model parameters by fitting the yield curve to observed market rates.
 
         Uses non-linear least squares optimization to estimate beta0, beta1, beta2, beta3, tau1, tau2.
 
@@ -70,8 +65,7 @@ class SvenssonInterpolator(Interpolator):
             raise CalibrationError(f"Svensson calibration failed: {str(e)}")
 
     def interpolate(self, t: float) -> float:
-        """
-        Interpolates the yield for a given maturity using the calibrated Svensson model.
+        """Interpolates the yield for a given maturity using the calibrated Svensson model.
 
         Parameters:
             t (float): Maturity at which to estimate the yield.

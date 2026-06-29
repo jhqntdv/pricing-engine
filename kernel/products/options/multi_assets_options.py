@@ -2,12 +2,10 @@ from .abstract_option import AbstractOption
 import numpy as np
 
 class AbstractMultiAssetOption(AbstractOption):
-    """
-    Abstract class for options with multiple underlyings.
+    """Abstract class for options with multiple underlyings.
     """
     def __init__(self, maturity: float, strike: float, weights:np.ndarray=None) -> None:
-        """
-        Initializes a multi-underlying option.
+        """Initializes a multi-underlying option.
 
         Args:
             maturity (float): Maturity of the option.
@@ -18,8 +16,7 @@ class AbstractMultiAssetOption(AbstractOption):
         self.weights = weights
 
     def weighted_average(self, paths: np.ndarray) -> float:
-        """
-        Calculates the weighted average of the underlyings.
+        """Calculates the weighted average of the underlyings.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -32,12 +29,10 @@ class AbstractMultiAssetOption(AbstractOption):
         return np.dot(self.weights, paths)
     
 class BasketCallOption(AbstractMultiAssetOption):
-    """
-    Class representing a basket option with fixed weights for a purchase option.
+    """Class representing a basket option with fixed weights for a purchase option.
     """
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the basket option payoff.
+        """Calculates the basket option payoff.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -49,30 +44,26 @@ class BasketCallOption(AbstractMultiAssetOption):
         return max(0, basket_price - self.strike)  # Payoff for a call
     
 class BasketPutOption(AbstractMultiAssetOption):
-    """
-    Class representing a basket option with fixed weights for a put option.
+    """Class representing a basket option with fixed weights for a put option.
     """
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the basket option payoff.
+        """Calculates the basket option payoff for a put.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
 
         Returns:
-            float: The payoff of the basket option.
+            float: The payoff of the basket put option.
         """
         basket_price = self.weighted_average(paths[:, -1])  # Weighted average of final prices
-        return max(0, self.strike - basket_price)  # Payoff for a call
+        return max(0, self.strike - basket_price)  # Payoff for a put
 
 class BestOfCallOption(AbstractMultiAssetOption):
-    """
-    Class representing a Best-Of Call option.
+    """Class representing a Best-Of Call option.
     The payoff is based on the best underlying on the final date.
     """
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the payoff for the Best-Of Call option.
+        """Calculates the payoff for the Best-Of Call option.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -85,13 +76,11 @@ class BestOfCallOption(AbstractMultiAssetOption):
 
 
 class BestOfPutOption(AbstractMultiAssetOption):
-    """
-    Class representing a Best-Of Put option.
+    """Class representing a Best-Of Put option.
     The payoff is based on the best underlying on the final date.
     """
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the payoff of the Best-Of Put option.
+        """Calculates the payoff of the Best-Of Put option.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -104,13 +93,11 @@ class BestOfPutOption(AbstractMultiAssetOption):
 
 
 class WorstOfCallOption(AbstractMultiAssetOption):
-    """
-    Class representing a Worst-Of Call option.
+    """Class representing a Worst-Of Call option.
     The payoff is based on the underlying worst on the final date.
     """
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the payoff for the Worst-Of Call option.
+        """Calculates the payoff for the Worst-Of Call option.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -123,13 +110,11 @@ class WorstOfCallOption(AbstractMultiAssetOption):
 
 
 class WorstOfPutOption(AbstractMultiAssetOption):
-    """
-    Class representing a Worst-Of Put option.
+    """Class representing a Worst-Of Put option.
     The payoff is based on the underlying worst on the final date.
     """
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the payoff of the Worst-Of Put option.
+        """Calculates the payoff of the Worst-Of Put option.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.

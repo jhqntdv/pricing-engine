@@ -2,8 +2,7 @@ import pandas as pd
 import os
 
 class UnderlyingAsset:
-    """
-    Represents an underlying asset in the financial market.
+    """Represents an underlying asset in the financial market.
 
     Attributes:
         name (str): Name of the underlying asset
@@ -14,8 +13,7 @@ class UnderlyingAsset:
     """
 
     def __init__(self, name: str):
-        """
-        Initialize an underlying asset.
+        """Initialize an underlying asset.
 
         Parameters:
             name (str): Name of the underlying asset
@@ -28,8 +26,7 @@ class UnderlyingAsset:
         self.last_price: float = None
 
     def load_underlying_info(self, asset_info: pd.Series):
-        """
-        Load the underlying informations from the loaded file.
+        """Load the underlying informations from the loaded file.
         """
         self.ticker = str(asset_info["Ticker"].iloc[0])
         self.isin = str(asset_info["ISIN"].iloc[0])

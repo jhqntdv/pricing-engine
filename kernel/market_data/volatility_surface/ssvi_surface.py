@@ -8,14 +8,13 @@ from . import AbstractVolatilitySurface
 
 
 class SSVIVolatilitySurface(AbstractVolatilitySurface):
-    """
+    """Surface Stochastic Volatility Inspired (SSVI) volatility surface model.
     """
 
     def __init__(self, option_data: pd.DataFrame, rate_curve: RateCurve):
-        """
-        Parameters:
-            option_data (pd.DataFrame): option market data, must contain the following columns : 'Strike', 'Spot', 'Maturity', 'Implied Volatility'
-            rate_curve (RateCurve): rate curve object already calibrated
+        """Parameters:
+        option_data (pd.DataFrame): option market data, must contain the following columns : 'Strike', 'Spot', 'Maturity', 'Implied Volatility'
+        rate_curve (RateCurve): rate curve object already calibrated
         """
         super().__init__(option_data, rate_curve)
         self.ssvi_params = None
@@ -23,8 +22,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
 
     @staticmethod
     def _ssvi_atm_variance(maturity: np.ndarray, ssvi_atm_params: np.ndarray) -> float:
-        """
-        SSVI total variance function.
+        """SSVI total variance function.
 
         Parameters:
             maturity (np.ndarray): maturity in years
@@ -40,8 +38,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
     
     @staticmethod
     def _ssvi_total_variance(k: float, atm_variance: float, ssvi_params: np.ndarray) -> float:
-        """
-        SSVI total variance function.
+        """SSVI total variance function.
 
         Parameters:
             k (float): log-moneyness
@@ -59,8 +56,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
         return 0.5 * atm_variance * ( 1 + rho * phi(atm_variance) * k + np.sqrt((phi(atm_variance) * k + rho)**2 + (1 - rho **2)))
     
     def _get_market_atm_variance(self, maturity: float) -> float:
-        """
-        Get the ATM variance for a given maturity from the option data.
+        """Get the ATM variance for a given maturity from the option data.
         This function checks if an ATM option is available in the data.
         If not, it interpolates the ATM variance from the available options of the slice.
 
@@ -86,8 +82,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
             return maturity * (atm_vol / 100) ** 2
     
     def _get_atm_variance(self, maturity: float) -> float:
-        """
-        Get the ATM variance for a given maturity from the option data.
+        """Get the ATM variance for a given maturity from the option data.
 
         Parameters:
             maturity (float): maturity in years
@@ -101,8 +96,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
         return self._ssvi_atm_variance(maturity, self.ssvi_ATM_params)
     
     def _ssvi_atm_cost_function(self, ssvi_atm_params: np.ndarray, maturities: np.ndarray, implied_ATM_variance: np.ndarray) -> float:
-        """
-        Cost function for the SSVI ATM calibration.
+        """Cost function for the SSVI ATM calibration.
         The calibration is done by minimizing the mean squared error between the market implied volatility and the SSVI model implied volatility.
 
         Parameters:
@@ -118,8 +112,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
         return np.mean((implied_ATM_variance - ssvi_ATM_variance) ** 2)
     
     def _ssvi_objective_function(self, ssvi_params: np.ndarray, option_data: pd.DataFrame) -> float:
-        """
-        Objective function for the SSVI calibration.
+        """Objective function for the SSVI calibration.
         The calibration is done by minimizing the mean squared error between the market implied volatility and the SSVI model implied volatility.
         For each maturity, the ATM variance is computed and used to compute the SSVI implied volatility.
 
@@ -153,8 +146,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
         return np.mean((market_total_variance - ssvi_total_variance) ** 2) * 1e6
 
     def calibrate_atm_variance(self):
-        """
-        Calibrate the ATM variance using the option data.
+        """Calibrate the ATM variance using the option data.
         This function uses the least squares method to minimize the difference between the market implied volatility and the SSVI model implied volatility at ATM.
         """
         maturities = self.option_data["Maturity"].unique()
@@ -176,8 +168,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
             raise Exception(f"SSVI ATM parametrization calibration failed : {res.message}")
 
     def calibrate_surface(self):
-        """
-        Calibrate the SSVI parameters using the option data.
+        """Calibrate the SSVI parameters using the option data.
         This function uses the least squares method to minimize the difference between the market implied volatility and the SSVI model implied volatility.
         
         The calibration is done for the whole maturity range of the option data.
@@ -215,8 +206,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
             raise Exception(f"SSVI calibration failed : {res.message}")
         
     def get_volatility(self, strike: float, maturity: float) -> float:
-        """
-        Get the volatility interpolated by the SSVI model for a given strike and maturity.
+        """Get the volatility interpolated by the SSVI model for a given strike and maturity.
 
         Parameters:
             strike (float): strike price

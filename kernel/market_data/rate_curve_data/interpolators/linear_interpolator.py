@@ -4,8 +4,7 @@ from scipy.interpolate import interp1d
 class LinearInterpolator(Interpolator):
 
     def __init__(self, maturities, rates):
-        """
-        Initializes the LinearInterpolator with market maturities and corresponding rates.
+        """Initializes the LinearInterpolator with market maturities and corresponding rates.
 
         Parameters:
             maturities (np.ndarray): List of bond maturities.
@@ -15,14 +14,12 @@ class LinearInterpolator(Interpolator):
         self.interpolator = None
 
     def calibrate(self):
-        """
-        Calibrates the LinearInterpolator by fitting the observed market rates.
+        """Calibrates the LinearInterpolator by fitting the observed market rates.
         """
         self.interpolator = interp1d(self.maturities, self.rates, kind='linear', fill_value='extrapolate')
         
     def interpolate(self, t: float) -> float:
-        """
-        Interpolates the yield for a given maturity using the calibrated linear model.
+        """Interpolates the yield for a given maturity using the calibrated linear model.
 
         Parameters:
             t (float): Maturity at which to estimate the yield.

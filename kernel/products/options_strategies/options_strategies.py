@@ -3,13 +3,11 @@ from .abstract_option_strategy import AbstractOptionStrategy
 from ..options.vanilla_options import EuropeanCallOption, EuropeanPutOption
 
 class Straddle(AbstractOptionStrategy):
-    """
-    Represents a straddle strategy.
+    """Represents a straddle strategy.
     """
     def __init__(self, maturity: float, strike: float, 
                  position_call: bool = True, position_put: bool = True):
-        """
-        Initializes a straddle strategy.
+        """Initializes a straddle strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -22,13 +20,11 @@ class Straddle(AbstractOptionStrategy):
         super().__init__([(self.call, position_call), (self.put, position_put)])
 
 class Strangle(AbstractOptionStrategy):
-    """
-    Represents a strangle strategy.
+    """Represents a strangle strategy.
     """
     def __init__(self, maturity: float, strike_put: float, strike_call: float, 
                  position_call: bool = True, position_put: bool = True):
-        """
-        Initializes a strangle policy.
+        """Initializes a strangle policy.
 
         Args:
             maturity (float): Maturity of options.
@@ -42,13 +38,11 @@ class Strangle(AbstractOptionStrategy):
         super().__init__([(call, position_call), (put, position_put)])
 
 class BullSpread(AbstractOptionStrategy):
-    """
-    Represents a bull spread strategy.
+    """Represents a bull spread strategy.
     """
     def __init__(self, maturity: float, strike_low: float, strike_high: float, 
                  position_low: bool = True, position_high: bool = False):
-        """
-        Initializes a bull spread strategy.
+        """Initializes a bull spread strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -62,13 +56,11 @@ class BullSpread(AbstractOptionStrategy):
         super().__init__([(self.call_low, position_low), (self.call_high, position_high)])
 
 class BearSpread(AbstractOptionStrategy):
-    """
-    Represents a bear spread strategy.
+    """Represents a bear spread strategy.
     """
     def __init__(self, maturity: float, strike_low: float, strike_high: float, 
                  position_low: bool = False, position_high: bool = True):
-        """
-        Initializes a bear spread strategy.
+        """Initializes a bear spread strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -82,13 +74,11 @@ class BearSpread(AbstractOptionStrategy):
         super().__init__([(self.put_low, position_low), (self.put_high, position_high)])
 
 class ButterflySpread(AbstractOptionStrategy):
-    """
-    Represents a butterfly spread strategy.
+    """Represents a butterfly spread strategy.
     """
     def __init__(self, maturity: float, strike_low: float, strike_mid: float, strike_high: float, 
                  position_low: bool = True, position_mid: bool = False, position_high: bool = True):
-        """
-        Initializes a butterfly spread strategy.
+        """Initializes a butterfly spread strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -111,13 +101,11 @@ class ButterflySpread(AbstractOptionStrategy):
         ])
 
 class CondorSpread(AbstractOptionStrategy):
-    """
-    Represents a condor spread strategy.
+    """Represents a condor spread strategy.
     """
     def __init__(self, maturity: float, strike_low: float, strike_mid1: float, strike_mid2: float, strike_high: float, 
                  position_low: bool = True, position_mid1: bool = False, position_mid2: bool = False, position_high: bool = True):
-        """
-        Initializes a condor spread strategy.
+        """Initializes a condor spread strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -142,13 +130,11 @@ class CondorSpread(AbstractOptionStrategy):
         ])
 
 class CalendarSpread(AbstractOptionStrategy):
-    """
-    Represents a calendar spread strategy.
+    """Represents a calendar spread strategy.
     """
     def __init__(self, strike: float, maturity_near: float, maturity_far: float, 
                  position_near: bool = False, position_far: bool = True):
-        """
-        Initializes a calendar spread strategy.
+        """Initializes a calendar spread strategy.
 
         Args:
             strike (float): Common strike price for options.
@@ -163,13 +149,11 @@ class CalendarSpread(AbstractOptionStrategy):
 
 
 class Collar(AbstractOptionStrategy):
-    """
-    Represents a collar strategy.
+    """Represents a collar strategy.
     """
     def __init__(self, maturity: float, strike_put: float, strike_call: float, 
                  position_call: bool = False, position_put: bool = True):
-        """
-        Initializes a collar strategy.
+        """Initializes a collar strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -183,14 +167,12 @@ class Collar(AbstractOptionStrategy):
         super().__init__([(self.call, position_call), (self.put, position_put)])
 
 class Strip(AbstractOptionStrategy):
-    """
-    Represents a strip strategy.
+    """Represents a strip strategy.
     Consisting of 1 call and 2 puts (all long or all short).
     """
     def __init__(self, maturity: float, strike: float, 
                  position_call: bool = True, position_put: bool = True):
-        """
-        Initializes a strip strategy.
+        """Initializes a strip strategy.
 
         Args:
             maturity (float): Maturity of options.
@@ -208,14 +190,12 @@ class Strip(AbstractOptionStrategy):
         ])
 
 class Strap(AbstractOptionStrategy):
-    """
-    Represents a strap strategy.
+    """Represents a strap strategy.
     Composed of 2 calls and 1 put (all long or all short).
     """
     def __init__(self, maturity: float, strike: float, 
                  position_call: bool = True, position_put: bool = True):
-        """
-        Initializes a strap strategy.
+        """Initializes a strap strategy.
 
         Args:
             maturity (float): Maturity of options.

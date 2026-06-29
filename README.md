@@ -400,7 +400,13 @@ MC 引擎的核心記憶體配置來自 Euler 離散化方案中的 NumPy 陣列
 `PricingLauncher.calculate()` 回傳獨立的 `PricingResults` 物件，但請注意：傳入的 `derivative` 物件可能會被引擎修改（例如 `initial_spot`、`price`、`ytm`、`fixed_rate` 等屬性會被設值）。若需保留原始商品狀態，請傳入 `copy.deepcopy(derivative)`。
 
 ### 例外處理 (Error Handling)
-若給予極端不合理的參數 (例如到期日小於 0、barrier 與 strike 不符合邏輯)，核心模型可能會拋出 `ValueError`。建議在 API 層面套用 `try-except` 包裝。
+核心引擎會針對各種錯誤拋出 `PricingEngineError` 的子類別。建議在 API 層面直接捕捉 `PricingEngineError` 以統一處理所有引擎相關的錯誤。常見的子類別包含：
+- `UnsupportedModelError`：使用了未支援的隨機過程模型。
+- `UnsupportedEngineTypeError`：指定了未知的定價引擎類型。
+- `UnsupportedProductError`：該引擎不支援您傳入的金融商品類別。
+- `InvalidProductInputError`：商品的參數設定不合理或有缺失。
+- `IndeterminateValuationError`：定價公式遇到數學上無法計算的情況 (例如 0/0)。
+- `CalibrationError`：模型或曲線校準失敗。
 
 ### 非同步建議 (Async Recommendation)
 MC 定價屬於 **CPU-bound** 運算（非 I/O-bound），不適合用 `async/await`。建議搭配 **Celery** 或類似的任務佇列 (Task Queue)，將定價請求分派至背景 Worker 執行。

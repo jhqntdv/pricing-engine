@@ -2,12 +2,10 @@ import numpy as np
 from .abstract_structured_product import AbstractStructuredProduct
 
 class AbstractParticipationProduct(AbstractStructuredProduct):
-    """
-    Abstract class for participation products.
+    """Abstract class for participation products.
     """
     def __init__(self, maturity: float, rebate: float, leverage: float):
-        """
-        Initializes a participation product.
+        """Initializes a participation product.
 
         Args:
             maturity (float): Maturity of the product.
@@ -20,12 +18,10 @@ class AbstractParticipationProduct(AbstractStructuredProduct):
         self.leverage: float = leverage
 
 class TwinWin(AbstractParticipationProduct):
-    """
-    Twin Win structured product with upper and lower barriers, rebate and lever.
+    """Twin Win structured product with upper and lower barriers, rebate and lever.
     """
     def __init__(self, maturity: float, upper_barrier: float, lower_barrier: float, rebate: float = 0, leverage: float = 100):
-        """
-        Initializes a Twin Win product.
+        """Initializes a Twin Win product.
 
         Args:
             maturity (float): Maturity of the product.
@@ -41,8 +37,7 @@ class TwinWin(AbstractParticipationProduct):
         self.lower_barrier = lower_barrier
 
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the Twin Win payoff.
+        """Calculates the Twin Win payoff.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -68,7 +63,26 @@ class TwinWin(AbstractParticipationProduct):
 
         return payoff
 
+    def get_discounted_payoff(self, paths: np.ndarray, market: 'Market') -> np.ndarray:
+        """Calculate the discounted payoff for the Twin Win product.
+
+        Args:
+            paths: Array of simulated asset prices.
+            market: The market data containing the discount curve.
+
+        Returns:
+            An array of discounted payoffs for each path.
+        """
+        undiscounted = self.payoff(paths)
+        df = market.get_discount_factor(self.maturity)
+        return undiscounted * df
+
     def description(self) -> str:
+        """Return a description of the Twin Win product.
+
+        Returns:
+            A string describing the product's features.
+        """
         if self.upper_barrier:
             return (f"Twin Win with upper barrier at {self.upper_barrier}, lower barrier at {self.lower_barrier}, "
                      f"rebate of {self.rebate}, and leverage of {self.leverage}.")
@@ -78,12 +92,10 @@ class TwinWin(AbstractParticipationProduct):
     
 
 class Airbag(AbstractParticipationProduct):
-    """
-    AirBag structured product with upper and lower barriers, rebate and lever.
+    """AirBag structured product with upper and lower barriers, rebate and lever.
     """
     def __init__(self, maturity: float, upper_barrier: float, lower_barrier: float, rebate: float = 0, leverage: float = 1):
-        """
-        Initializes an AirBag product.
+        """Initializes an AirBag product.
 
         Args:
             maturity (float): Maturity of the product.
@@ -100,8 +112,7 @@ class Airbag(AbstractParticipationProduct):
         self.lower_barrier = lower_barrier
 
     def payoff(self, paths: np.ndarray) -> float:
-        """
-        Calculates the Airbag payoff.
+        """Calculates the Airbag payoff.
 
         Args:
             paths (np.ndarray): Paths of underlying prices.
@@ -129,7 +140,26 @@ class Airbag(AbstractParticipationProduct):
 
         return payoff
 
+    def get_discounted_payoff(self, paths: np.ndarray, market: 'Market') -> np.ndarray:
+        """Calculate the discounted payoff for the Airbag product.
+
+        Args:
+            paths: Array of simulated asset prices.
+            market: The market data containing the discount curve.
+
+        Returns:
+            An array of discounted payoffs for each path.
+        """
+        undiscounted = self.payoff(paths)
+        df = market.get_discount_factor(self.maturity)
+        return undiscounted * df
+
     def description(self) -> str:
+        """Return a description of the Airbag product.
+
+        Returns:
+            A string describing the product's features.
+        """
         if self.upper_barrier:
             return (f"Airbag with upper barrier at {self.upper_barrier}, lower barrier at {self.lower_barrier}, "
                     f"rebate of {self.rebate}, and leverage of {self.leverage}.")

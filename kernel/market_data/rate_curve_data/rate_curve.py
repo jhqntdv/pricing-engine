@@ -4,16 +4,14 @@ import pandas as pd
 from typing import Tuple
 
 class RateCurve:
-    """
-    Defines a yield curve model based on market data and an interpolation method.
+    """Defines a yield curve model based on market data and an interpolation method.
 
     This class processes market rate data, interpolates missing values, and provides methods to compute yields
     and discount factors. The interpolation can be based on different models such as Svensson, Nelson-Siegel...
     """
 
     def __init__(self, data_curve: pd.DataFrame, interpolation_type: 'InterpolationType'):  # type: ignore
-        """
-        Initializes the rate curve with market data and an interpolation method.
+        """Initializes the rate curve with market data and an interpolation method.
 
         Parameters:
             data_curve (pd.DataFrame): Market yield data with 'Maturity'and 'Rate' columns.
@@ -25,14 +23,12 @@ class RateCurve:
         self.interpolator = interpolation_type.value(maturities, rates)
 
     def calibrate(self) -> None:
-        """
-        Calibrates the interpolator to the market data.
+        """Calibrates the interpolator to the market data.
         """
         self.interpolator.calibrate()
 
     def get_rate(self, maturity: float) -> float:
-        """
-        Retrieves the interpolated yield rate for a given maturity.
+        """Retrieves the interpolated yield rate for a given maturity.
 
         Parameters:
             maturity (float): Desired maturity in years.

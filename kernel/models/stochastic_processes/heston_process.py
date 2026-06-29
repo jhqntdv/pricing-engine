@@ -4,14 +4,12 @@ import numpy as np
 from typing import Tuple, Union, List
 
 class HestonProcess(TwoFactorStochasticProcess):
-    """
-    Class representing a Heston stochastic volatility process under the risk-neutral measure Q.
+    """Class representing a Heston stochastic volatility process under the risk-neutral measure Q.
     """
 
     def __init__(self, S0: float, v0: float, T: float, nb_steps: int, drift: Union[List[float], np.ndarray],
                  kappa: float, theta: float, sigma: float, rho: float, random_generator: AbstractRandomGenerator = None):
-        """
-        Initializes the Heston process.
+        """Initializes the Heston process.
 
         Parameters:
             S0 (float): Initial spot price
@@ -45,8 +43,7 @@ class HestonProcess(TwoFactorStochasticProcess):
         return self.sigma * np.sqrt(np.maximum(v, 0))  # Ensure positivity
 
     def get_random_increments(self, nb_paths: int, seed: int = 4012) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Generates the two correlated brownian motions of the Heston process with the Cholesky decomposition.
+        """Generates the two correlated brownian motions of the Heston process with the Cholesky decomposition.
 
         Parameters:
             nb_paths (int): The number of paths to simulate

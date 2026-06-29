@@ -5,8 +5,7 @@ from . import AbstractVolatilitySurface
 from kernel.market_data import RateCurve
 
 class LocalVolatilitySurface(AbstractVolatilitySurface):
-    """
-    Defines the Local Volatility Surface based on Gatheral's formulation of Dupire's formula.
+    """Defines the Local Volatility Surface based on Gatheral's formulation of Dupire's formula.
     
     Rather than differentiating Call prices (which is numerically unstable for OTM options
     due to small prices), this class computes local volatility by differentiating the
@@ -26,6 +25,13 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
     """
 
     def __init__(self, option_data: pd.DataFrame, rate_curve: RateCurve, svi_surface: 'SVIVolatilitySurface'): # type: ignore
+        """Initialize the Local Volatility Surface.
+
+        Args:
+            option_data: Market option data.
+            rate_curve: The risk-free rate curve.
+            svi_surface: A calibrated SVI volatility surface.
+        """
         super().__init__(option_data, rate_curve)
         
         # Ensure that the SVI surface is calibrated before usage
@@ -36,15 +42,13 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
         self.is_calibrated = True  # Local Volatility is implicitly calibrated via SVI
 
     def calibrate_surface(self):
-        """
-        No calibration is needed for the Local Volatility Surface as it is directly
+        """No calibration is needed for the Local Volatility Surface as it is directly
         derived from the calibrated SVI Implied Volatility surface.
         """
         pass
 
     def _option_price(self, strike: float, maturity: float) -> float:
-        """
-        Compute the price of a call option using the Black-Scholes formula.
+        """Compute the price of a call option using the Black-Scholes formula.
         Used for visualization purposes.
         """
         S = self.spot
@@ -57,8 +61,7 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
         return S * norm.cdf(d1) - strike * np.exp(-r * maturity) * norm.cdf(d2)
 
     def _total_variance(self, k: float, t: float) -> float:
-        """
-        Compute the Total Implied Variance w(k, t) = sigma_imp^2(K, T) * t
+        """Compute the Total Implied Variance w(k, t) = sigma_imp^2(K, T) * t
         where k = ln(K/S).
         """
         K = self.spot * np.exp(k)
@@ -66,8 +69,7 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
         return (sigma_imp ** 2) * t
 
     def _finite_difference_variance(self, k: float, t: float) -> tuple:
-        """
-        Compute the partial derivatives of the Total Variance surface w(k, t)
+        """Compute the partial derivatives of the Total Variance surface w(k, t)
         using custom user-specified finite difference steps.
         
         Log-moneyness bump:
@@ -111,8 +113,7 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
         return w, dw_dk, d2w_dk2, dw_dt
 
     def get_volatility(self, strike: float, maturity: float) -> float:
-        """
-        Compute the local volatility using Gatheral's Total Variance Dupire Formula.
+        """Compute the local volatility using Gatheral's Total Variance Dupire Formula.
         
         Volatility values are capped at 350% (3.5) and floored at 5% (0.05).
         """

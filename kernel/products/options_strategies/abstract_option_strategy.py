@@ -4,12 +4,10 @@ from ..abstract_derivative import AbstractDerivative
 from ..options.abstract_option import AbstractOption
 
 class AbstractOptionStrategy(AbstractDerivative):
-    """
-    Class representing an optional strategy composed of several options.
+    """Class representing an optional strategy composed of several options.
     """
     def __init__(self, options: List[Tuple[AbstractOption, bool]] = None):
-        """
-        Initializes an optional strategy.
+        """Initializes an optional strategy.
 
         Args:
             options (List[Tuple[AbstractOption, bool]]): List of tuples containing an option and a boolean
@@ -18,8 +16,7 @@ class AbstractOptionStrategy(AbstractDerivative):
         self.options: List[Tuple[AbstractOption, bool]] = options if options is not None else []
 
     def add_option(self, option: AbstractOption, is_long: bool):
-        """
-        Adds an option to the policy.
+        """Adds an option to the policy.
 
         Args:
             option (AbstractOption): An option instance to add.
@@ -28,8 +25,7 @@ class AbstractOptionStrategy(AbstractDerivative):
         self.options.append((option, is_long))
 
     def get_discounted_payoff(self, path: np.ndarray, market: 'Market') -> np.ndarray:
-        """
-        Calculates the total discounted payoff of the strategy for a given path.
+        """Calculates the total discounted payoff of the strategy for a given path.
 
         Args:
             path (np.ndarray): Path of underlying prices or values.
@@ -45,14 +41,21 @@ class AbstractOptionStrategy(AbstractDerivative):
         return total_payoff
 
     def accept(self, engine: 'AbstractPricingEngine'):
+        """Accept a pricing engine using the visitor pattern.
+
+        Args:
+            engine: The pricing engine to calculate the strategy.
+
+        Returns:
+            The pricing results from the engine.
+        """
         return engine.calculate_strategy(self)
 
     def __str__(self) -> str:
-        """
-        Textual representation of the strategy.
+        """Textual representation of the strategy.
 
         Returns:
             str: Description of the strategy and the options it contains.
         """
-        return f"AbstractOptionStrategy avec {len(self.options)} options: " + \
+        return f"AbstractOptionStrategy with {len(self.options)} options: " + \
                f"{[(str(option), is_long) for option, is_long in self.options]}"

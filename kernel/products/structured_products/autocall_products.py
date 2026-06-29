@@ -5,8 +5,7 @@ from . import AbstractStructuredProduct
 
 
 class AbstractAutocall(AbstractStructuredProduct):
-    """
-    Abstract class for Autocall products.
+    """Abstract class for Autocall products.
 
     Attributes:
         maturity (float): Maturity of the product in years.
@@ -20,6 +19,18 @@ class AbstractAutocall(AbstractStructuredProduct):
     def __init__(self, maturity: float, observation_frequency: ObservationFrequency,
                  capital_barrier: float, autocall_barrier: float, coupon_rate: float,
                  is_security: bool = False, is_plus: bool = False, initial_spot: float = None):
+        """Initialize an abstract autocall product.
+
+        Args:
+            maturity: Maturity of the product in years.
+            observation_frequency: Frequency of observations.
+            capital_barrier: Level of capital protection (as % of initial spot).
+            autocall_barrier: Early callback level as % of initial spot.
+            coupon_rate: Coupon rate paid per period.
+            is_security: Improved protection in case of loss. Defaults to False.
+            is_plus: "Plus" option which accumulates unpaid coupons. Defaults to False.
+            initial_spot: Initial spot price of the underlying. Defaults to None.
+        """
 
         super().__init__(maturity, initial_spot)
         self.observation_frequency = observation_frequency
@@ -31,12 +42,20 @@ class AbstractAutocall(AbstractStructuredProduct):
 
     @abstractmethod
     def get_discounted_payoff(self, paths: np.ndarray, market: 'Market') -> np.ndarray:
+        """Calculate the discounted payoff for the autocall product.
+
+        Args:
+            paths: Array of simulated asset prices.
+            market: The market data containing the discount curve.
+
+        Returns:
+            An array of discounted payoffs for each path.
+        """
         pass
 
 
 class Phoenix(AbstractAutocall):
-    """
-    Phoenix product: pays periodic coupons if the underlying is above a coupon barrier.
+    """Phoenix product: pays periodic coupons if the underlying is above a coupon barrier.
     - Recalled automatically if the underlying exceeds the autocall barrier on any observation date.
     - At maturity, capital protection applies based on the capital barrier level.
 
@@ -48,11 +67,32 @@ class Phoenix(AbstractAutocall):
                  capital_barrier, autocall_barrier,
                  coupon_rate, coupon_barrier,
                  is_security=False, is_plus=False, initial_spot=None):
+        """Initialize the Phoenix product.
 
+        Args:
+            maturity: Maturity of the product in years.
+            observation_frequency: Frequency of observations.
+            capital_barrier: Level of capital protection (as % of initial spot).
+            autocall_barrier: Early callback level (as % of initial spot).
+            coupon_rate: Coupon rate paid per period.
+            coupon_barrier: Barrier for paying the coupon (as % of initial spot).
+            is_security: Whether improved protection applies. Defaults to False.
+            is_plus: Whether unpaid coupons accumulate. Defaults to False.
+            initial_spot: Initial spot price of the underlying.
+        """
         super().__init__(maturity, observation_frequency, capital_barrier, autocall_barrier, coupon_rate, is_security, is_plus, initial_spot)
         self.coupon_barrier = coupon_barrier
 
     def get_discounted_payoff(self, paths: np.ndarray, market: 'Market') -> np.ndarray:
+        """Calculate the discounted payoff of the Phoenix product.
+
+        Args:
+            paths: Array of simulated asset prices.
+            market: The market data containing the discount curve.
+
+        Returns:
+            An array of discounted payoffs for each path.
+        """
         nb_paths = paths.shape[0]
         nb_steps = paths.shape[1] - 1
 
@@ -126,10 +166,17 @@ class Phoenix(AbstractAutocall):
 
         return payoffs
 
+    def description(self) -> str:
+        """Return a description of the Phoenix product.
+
+        Returns:
+            The product description string.
+        """
+        return "Phoenix Autocall Product"
+
 
 class Eagle(AbstractAutocall):
-    """
-    Eagle product: variation of the Phoenix with a simpler coupon structure.
+    """Eagle product: variation of the Phoenix with a simpler coupon structure.
     - Coupon at autocall is proportional to the number of periods elapsed.
     - No separate coupon barrier; recall triggers a full coupon payment.
 
@@ -139,10 +186,30 @@ class Eagle(AbstractAutocall):
                  capital_barrier, autocall_barrier,
                  coupon_rate,
                  is_security=False, is_plus=False, initial_spot=None):
+        """Initialize the Eagle product.
 
+        Args:
+            maturity: Maturity of the product in years.
+            observation_frequency: Frequency of observations.
+            capital_barrier: Level of capital protection (as % of initial spot).
+            autocall_barrier: Early callback level (as % of initial spot).
+            coupon_rate: Coupon rate paid per period.
+            is_security: Whether improved protection applies. Defaults to False.
+            is_plus: Whether unpaid coupons accumulate. Defaults to False.
+            initial_spot: Initial spot price of the underlying.
+        """
         super().__init__(maturity, observation_frequency, capital_barrier, autocall_barrier, coupon_rate, is_security, is_plus, initial_spot)
 
     def get_discounted_payoff(self, paths: np.ndarray, market: 'Market') -> np.ndarray:
+        """Calculate the discounted payoff of the Eagle product.
+
+        Args:
+            paths: Array of simulated asset prices.
+            market: The market data containing the discount curve.
+
+        Returns:
+            An array of discounted payoffs for each path.
+        """
         nb_paths = paths.shape[0]
         nb_steps = paths.shape[1] - 1
 
@@ -196,3 +263,11 @@ class Eagle(AbstractAutocall):
                     payoffs[below_capital] = np.maximum(0.0, final_spot[below_capital]) * df_final
 
         return payoffs
+
+    def description(self) -> str:
+        """Return a description of the Eagle product.
+
+        Returns:
+            The product description string.
+        """
+        return "Eagle Autocall Product"

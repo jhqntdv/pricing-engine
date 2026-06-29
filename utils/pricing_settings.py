@@ -5,6 +5,8 @@ from kernel.tools import RateCurveType, ObservationFrequency, Model
 from kernel.market_data import InterpolationType, VolatilitySurfaceType
 
 class PricingSettings:
+    """Settings configuration for the pricing engine."""
+
     def __init__(
         self,
         underlying_name: Optional[str] = None,
@@ -23,6 +25,25 @@ class PricingSettings:
         compute_callable_coupons: bool = False,
         random_generator_type: str = "NUMPY",
     ):
+        """Initialize the pricing settings.
+
+        Args:
+            underlying_name: Name of the underlying asset.
+            rate_curve_type: Type of the risk-free rate curve.
+            interpolation_type: Interpolation method for market data.
+            volatility_surface_type: Type of the volatility surface.
+            obs_frequency: Observation frequency for path-dependent products.
+            day_count_convention: Day count convention string.
+            model: Stochastic model to use (e.g., Black-Scholes, Heston).
+            pricing_engine_type: Engine type (e.g., Analytical, MC).
+            nb_paths: Number of Monte Carlo paths.
+            nb_steps: Number of simulation steps.
+            random_seed: Seed for the random number generator. Defaults to 4012.
+            compute_greeks: Whether to compute Greeks. Defaults to False.
+            valuation_date: The valuation date.
+            compute_callable_coupons: Whether to compute callable coupons. Defaults to False.
+            random_generator_type: Type of random generator to use ("NUMPY" or "SOBOL"). Defaults to "NUMPY".
+        """
         self.underlying_name = underlying_name
         self.rate_curve_type = rate_curve_type
         self.interpolation_type = interpolation_type

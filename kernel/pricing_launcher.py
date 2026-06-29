@@ -1,4 +1,5 @@
 from kernel.market_data import Market
+from kernel.exceptions import UnsupportedEngineTypeError
 from kernel.models.pricing_engines.enum_pricing_engine import PricingEngineType
 from kernel.products.abstract_derivative import AbstractDerivative
 from utils.pricing_results import PricingResults
@@ -10,12 +11,17 @@ from typing import Optional
 
 
 class PricingLauncher:
-    """
-    The pricing launcher defines the objects used for the pricing as follow:
-        - Based on the selected diffusion (BS, Heston...) the associated stochastic process is defined
+    """The pricing launcher defines the objects used for the pricing as follow:
+    - Based on the selected diffusion (BS, Heston...) the associated stochastic process is defined
     """
 
     def __init__(self, pricing_settings: PricingSettings, market: Optional[Market] = None):
+        """Initialize the PricingLauncher.
+
+        Args:
+            pricing_settings: The configuration settings for pricing.
+            market: An optional Market instance. If not provided, it will be built.
+        """
         self.settings = pricing_settings
         if market is not None:
             self.market = market
@@ -23,8 +29,7 @@ class PricingLauncher:
             self._init_market()
 
     def _init_market(self):
-        """
-        Initializes the market object with the given settings.
+        """Initializes the market object with the given settings.
         """
         data_loader = MarketDataLoader()
         underlying_df = data_loader.get_underlying_info(self.settings.underlying_name)
@@ -42,12 +47,13 @@ class PricingLauncher:
                              obs_frequency=self.settings.obs_frequency)
 
     def calculate(self, derivative: AbstractDerivative) -> PricingResults:
+        """Main method to perform the pricing calculation and return results.
         """
-        Main method to perform the pricing calculation and return results.
-        """
-        
         # Initialize pricer
-        engine = PricingEngineType[self.settings.pricing_engine_type.name].value(market=self.market,settings=self.settings)
+        try:
+            engine = PricingEngineType[self.settings.pricing_engine_type.name].value(market=self.market,settings=self.settings)
+        except (KeyError, AttributeError) as e:
+            raise UnsupportedEngineTypeError(f"Unsupported pricing engine type: {self.settings.pricing_engine_type}") from e
         
         # Compute and return the results directly
         return engine.get_results(derivative=derivative)

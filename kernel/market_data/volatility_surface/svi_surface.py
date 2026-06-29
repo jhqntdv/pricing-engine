@@ -8,8 +8,7 @@ from . import AbstractVolatilitySurface
 
 
 class SVIVolatilitySurface(AbstractVolatilitySurface):
-    """
-    Defines the SVI raw parametrisation defined by Jim Gatheral (2004) to fit an arbitrage free Implied Volatility surface.
+    """Defines the SVI raw parametrisation defined by Jim Gatheral (2004) to fit an arbitrage free Implied Volatility surface.
 
     We choose the "raw" parametrisation as it is the simplest SVI form by we note that "natural" or "jump wings"
     parametrisation can we derived from the raw form to insure parameters interpretability.
@@ -37,10 +36,9 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
     """
 
     def __init__(self, option_data: pd.DataFrame, rate_curve: RateCurve):
-        """
-        Parameters:
-            option_data (pd.DataFrame): option market data, must contain the following columns : 'Strike', 'Spot', 'Maturity', 'Implied Volatility'
-            rate_curve (RateCurve): rate curve object already calibrated
+        """Parameters:
+        option_data (pd.DataFrame): option market data, must contain the following columns : 'Strike', 'Spot', 'Maturity', 'Implied Volatility'
+        rate_curve (RateCurve): rate curve object already calibrated
         """
         super().__init__(option_data, rate_curve)
         self.svi_params = None
@@ -49,8 +47,7 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
 
     @staticmethod
     def svi_total_variance(k: np.ndarray, svi_params: np.ndarray) -> float:
-        """
-        Defines the SVI total implied variance w(k).
+        """Defines the SVI total implied variance w(k).
 
         Parameters:
             k (np.ndarray): log moneyness
@@ -64,8 +61,7 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
 
     def compute_weighting_vega(self, spot: float, maturities: np.ndarray,
                                vols: np.ndarray, strikes: np.ndarray) -> np.ndarray:
-        """
-        Compute vegas to weight the cost function in order to fit better the ATM options.
+        """Compute vegas to weight the cost function in order to fit better the ATM options.
 
         Parameters:
             spot (np.ndarray): market data spot
@@ -88,8 +84,7 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
     def cost_function_svi(self, svi_params: np.ndarray, log_moneyness : np.ndarray,
                           maturities: np.ndarray, market_implied_vol: np.ndarray,
                           vega: np.ndarray) -> float:
-        """
-        Defines the MSE cost function for the optimization problem.
+        """Defines the MSE cost function for the optimization problem.
         We want to minimize the SVI fitting error :
             i.e. the gap between SVI total implied variance and market data total implied variance.
 
@@ -112,8 +107,7 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
         return float(np.mean((SVI_total_variance - market_total_variance) ** 2))
 
     def calibrate_surface(self) -> None:
-        """
-        Calibrate the volatility surface by fitting SVI parameters for each maturity slice,
+        """Calibrate the volatility surface by fitting SVI parameters for each maturity slice,
         then interpolate the parameters across maturities.
         """
         unique_maturities = self.option_data["Maturity"].unique()
@@ -150,8 +144,7 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
         self._interpolate_parameters(unique_maturities)
 
     def _interpolate_parameters(self, maturities: np.ndarray) -> None:
-        """
-        Interpolate SVI parameters across maturities.
+        """Interpolate SVI parameters across maturities.
         """
         svi_params_array = np.array([self.svi_params_by_maturity[m] for m in maturities])
         self.interpolators = {
@@ -160,8 +153,7 @@ class SVIVolatilitySurface(AbstractVolatilitySurface):
         }
 
     def get_volatility(self, strike: float, maturity: float) -> float:
-        """
-        Get the volatility interpolated by the volatility surface at this specific point (Strike * Maturity).
+        """Get the volatility interpolated by the volatility surface at this specific point (Strike * Maturity).
 
         Parameters:
             strike (float): strike price
