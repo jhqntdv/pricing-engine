@@ -170,8 +170,8 @@ Principle: build the safety net first, then do the high-risk / dependency-bearin
    - *Rationale:* largest volume, zero logic risk; the existing tests guarantee pricing output is unchanged.
 
 ### Phase 4 — Close out
-14. Final: full suite green + `ruff D` clean.
-15. CI deferred — none exists; rely on local `ruff check`. Add docstring lint to CI only if/when a pipeline is created.
+14. ~~Final: full suite green + `ruff D` clean.~~
+15. ~~CI deferred — none exists; rely on local `ruff check`. Add docstring lint to CI only if/when a pipeline is created.~~
 
 ## Risks
 - Exception-type changes are a potential breaking change — mitigated by the multiple-inheritance hierarchy (Task 2.0) and the compatibility tests (Task 2.4).
