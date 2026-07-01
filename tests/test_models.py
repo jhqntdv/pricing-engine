@@ -100,6 +100,9 @@ class TestEulerScheme(unittest.TestCase):
         # Initial spot check
         np.testing.assert_array_equal(paths[:, 0], np.full(self.nb_paths, self.S0))
 
+        # Log-Euler must keep prices strictly positive
+        self.assertTrue(np.all(paths > 0), "Log-Euler must keep prices strictly positive")
+
     def test_euler_two_factor(self):
         process = HestonProcess(
             S0=self.S0, 
@@ -120,6 +123,9 @@ class TestEulerScheme(unittest.TestCase):
         
         # Initial spot check
         np.testing.assert_array_equal(paths[:, 0], np.full(self.nb_paths, self.S0))
+
+        # Log-Euler spot must remain strictly positive
+        self.assertTrue(np.all(paths > 0), "Log-Euler spot must remain strictly positive")
 
     def test_euler_list_drift_and_typing(self):
         # Passing drift as a list instead of ndarray, which happens in mc_pricing_engine.py

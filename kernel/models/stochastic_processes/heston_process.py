@@ -22,7 +22,7 @@ class HestonProcess(TwoFactorStochasticProcess):
             sigma (float): Volatility of volatility
             rho (float): Correlation between spot and volatility processes
         """
-        super().__init__(S0, T, nb_steps, nb_factors=2, random_generator=random_generator)
+        super().__init__(S0, T, nb_steps, nb_factors=2, random_generator=random_generator, is_log_process=True)
         self.v0 = v0
         self.mu = drift
         self.kappa = kappa

@@ -48,7 +48,18 @@ class EulerScheme:
             drift = process.get_drift(i, x)
             vol = process.get_volatility(i, x)
 
-            paths[:, i + 1] = x + drift * dt + vol  * dW_i
+            if getattr(process, "is_log_process", False):
+                # Convert absolute drift/vol to proportional rates
+                safe_x = np.maximum(x, 1e-12)
+                mu_prop = drift / safe_x     # mu[t]
+                sig_prop = vol / safe_x      # sigma
+                # Exact geometric step (Ito-corrected)
+                paths[:, i + 1] = x * np.exp(
+                    (mu_prop - 0.5 * sig_prop ** 2) * dt + sig_prop * dW_i
+                )
+            else:
+                # Raw Euler for normal-distributed processes
+                paths[:, i + 1] = x + drift * dt + vol * dW_i
         return paths
 
     def _simulate_two_factor(self, process: TwoFactorStochasticProcess, nb_paths: int, seed: int) -> np.ndarray:
@@ -73,11 +84,23 @@ class EulerScheme:
             dW1_i = dW1[:, i]
             dW2_i = dW2[:, i]
 
-            drift = process.get_drift(i, x)
-            vol_drift = process.get_vol_drift(i, v)
-            vol_vol = process.get_vol_vol(i, v)
+            drift = process.get_drift(i, x)       # mu[t] * x
+            vol_drift = process.get_vol_drift(i, v)  # kappa * (theta - max(v,0))
+            vol_vol = process.get_vol_vol(i, v)      # sigma * sqrt(max(v,0))
 
-            x_next = x + drift * dt + np.sqrt(np.maximum(v, 0)) * x * dW1_i
+            if getattr(process, "is_log_process", False):
+                # Log-Euler for spot dimension only
+                safe_x = np.maximum(x, 1e-12)
+                mu_prop = drift / safe_x               # mu[t]
+                v_pos = np.maximum(v, 0)                # Full Truncation
+                # Exact geometric step with stochastic variance
+                x_next = x * np.exp(
+                    (mu_prop - 0.5 * v_pos) * dt + np.sqrt(v_pos) * dW1_i
+                )
+            else:
+                x_next = x + drift * dt + np.sqrt(np.maximum(v, 0)) * x * dW1_i
+
+            # Variance dimension: always Raw Euler with Full Truncation
             v_next = v + vol_drift * dt + vol_vol * dW2_i
 
             paths[:, i + 1, 0] = x_next

@@ -18,7 +18,7 @@ class BlackScholesProcess(OneFactorStochasticProcess):
             drift (float): The drift of the process
             volatility (float): The volatility of the process
         """
-        super().__init__(S0, T, nb_steps, random_generator=random_generator)
+        super().__init__(S0, T, nb_steps, random_generator=random_generator, is_log_process=True)
         self.mu = drift
         self.sigma = volatility 
     

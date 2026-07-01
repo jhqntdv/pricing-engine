@@ -7,26 +7,27 @@ class StochasticProcess(ABC):
     """Abstract class representing a stochastic process.
     """
 
-    def __init__(self, S0: float, T: float, nb_steps: int, nb_factors: int = 1, random_generator: AbstractRandomGenerator = None):
-        """Initializes the stochastic process.
+    def __init__(self, S0: float, T: float, nb_steps: int, nb_factors: int = 1, random_generator: AbstractRandomGenerator = None, is_log_process: bool = True) -> None:
+        """Initialize the base stochastic process.
 
-        Parameters:
-            S0 (float): The initial value of the process
-            T (float): The maturity of the process
-            nb_steps (int): The number of steps to simulate
+        Args:
+            S0 (float): Initial value of the process (e.g., spot price).
+            T (float): Time to maturity in years.
+            nb_steps (int): Number of discretization steps.
+            nb_factors (int, optional): Number of driving Brownian motions. Defaults to 1.
+            random_generator (RandomGenerator, optional): Source of random numbers. 
+                Defaults to NumpyRandomGenerator if None is provided.
+            is_log_process (bool, optional): Whether the process represents a strictly positive
+                geometric process (e.g., asset prices) that should use exact Log-Euler discretization. 
+                Defaults to True. False indicates a normal/additive process (e.g., Vasicek) that uses Raw Euler.
         """
-        dt = T / nb_steps
-        if dt <= 0:
-            raise ValueError("The time (dt) must be positive.")
-        if nb_steps <= 0:
-            raise ValueError("The number of steps must be positive.")
-        
         self.S0 = S0
-        self.nb_steps = nb_steps
         self.T = T
-        self.dt = dt
+        self.nb_steps = nb_steps
+        self.dt = T / nb_steps if nb_steps > 0 else 0.0
         self.nb_factors = nb_factors
-        self.random_generator = random_generator if random_generator is not None else NumpyRandomGenerator()
+        self.random_generator = random_generator or NumpyRandomGenerator()
+        self.is_log_process = is_log_process
 
     @abstractmethod
     def get_random_increments(self, nb_paths: int, seed: int = 4012) -> Union[np.ndarray, Tuple[np.ndarray, ...]]:

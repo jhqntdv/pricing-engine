@@ -1,5 +1,10 @@
 # Upgrade Euler Discretization to Log-Euler (Exact) Scheme
 
+> [!IMPORTANT]
+> **Single source of truth.** This document (together with `change_plan_two_factor_euler.md`) is authoritative. `IMPLEMENTATION_MASTER_ROADMAP.md` is **outdated / for historical reference only** — it uses wrong module paths (`kernel/engines/...` instead of `kernel/models/pricing_engines/...`) and mixes the two-factor `SimulationResult` work into the Log-Euler phases, which contradicts the required ordering. Do **not** implement from the roadmap.
+>
+> **Execution order across the two plans (critical):** This Log-Euler plan must be merged **BEFORE** `change_plan_two_factor_euler.md`. Both plans edit the **same** `_simulate_two_factor` method and the **same** `tests/test_models.py`. See the new "Cross-Plan Coordination" section below.
+
 ## Background & Motivation
 
 The current `EulerScheme` applies a **Raw (Arithmetic) Euler-Maruyama** discretization to geometric asset price processes:
@@ -36,6 +41,24 @@ For Black-Scholes with constant $\sigma$, this is the **exact analytical solutio
 
 > [!WARNING]
 > **Future Normal-Distributed Models**: The Log-Euler scheme assumes strictly positive asset prices. If we add models where the state variable can be negative (e.g., Vasicek interest rate model, spread models), those processes must set `is_log_process = False` to fall back to the existing Raw Euler logic. This is controlled by the new flag on `StochasticProcess`.
+
+---
+
+## Cross-Plan Coordination (Log-Euler ↔ Two-Factor `SimulationResult`)
+
+This plan and `change_plan_two_factor_euler.md` **both edit two of the same artifacts**. Doing them independently will cause silent overwrites or broken tests. Coordinate as follows:
+
+**1. Shared method: `EulerScheme._simulate_two_factor`.**
+- *This plan* makes the **spot** dimension use Log-Euler (variance stays Raw Euler + Full Truncation) and returns `paths[:, :, 0]`.
+- *Two-factor plan* changes the **return type** to `SimulationResult(spot_paths=paths[:, :, 0], variance_paths=paths[:, :, 1])` and stops slicing the variance away.
+- **Required stitch (two-factor phase):** keep this plan's Log-Euler spot step, but return the full `(nb_paths, nb_steps+1, 2)` internally and wrap it in `SimulationResult`. The two changes are complementary, but they land on the **same lines** — merge them by hand in one commit, do not cherry-pick blindly.
+
+**2. Shared test file: `tests/test_models.py`.**
+- *This plan* adds `assert np.all(paths > 0)` on the return of `simulate_paths` (Phase 3 / sub-phase 4b–4c).
+- *Two-factor plan* changes `paths.shape` → `res.spot_paths.shape` because the return becomes a `SimulationResult`.
+- **Consequence:** After the two-factor merge, **every** assertion in this plan's new tests that treats the `simulate_paths` return as a raw array — the positivity asserts **and** all the new math tests below that do `paths[:, -1]` / `paths[:, 0]` — must be updated to read `res = scheme.simulate_paths(...); paths = res.spot_paths`. Each new test in this document is annotated where relevant.
+
+**3. Ordering (non-negotiable):** Merge **this Log-Euler plan first**, then the two-factor plan. The two-factor plan's Phase 0 already states this dependency. Rationale: Log-Euler is a pure numerical-accuracy change with a stable `np.ndarray` return; introducing `SimulationResult` on top of a known-good Log-Euler baseline isolates any type-plumbing failures from any math failures.
 
 ---
 
@@ -252,6 +275,102 @@ def test_step_size_invariance():
     assert max(prices) - min(prices) < 0.10
 ```
 
+> [!TIP]
+> **Prefer a benchmark-based tolerance.** Because Log-Euler is *exact* for constant-vol BS, each per-step price should sit on top of the Black-Scholes analytical price. A stronger version of this test asserts every price is within `3 * std_dev` of the closed-form BS call, instead of only checking they agree with each other (agreement-with-each-other can hide a shared bias).
+
+**Test 4: Risk-Neutral Martingale / Ito-Correction Check (CRITICAL — currently missing)** 🔢
+
+This is the single most important correctness test for the Ito drift correction $-\tfrac12\sigma^2$. If the correction term is dropped, has the wrong sign, or the wrong coefficient, the mean/variance test (Test 1) can still pass while the **discounted asset price stops being a martingale**. Under the risk-neutral measure:
+
+$$E[S_T] = S_0 \, e^{rT}$$
+
+```python
+def test_risk_neutral_martingale_bs():
+    """E[S_T] must equal S0 * exp(rT) — proves the -0.5*sigma^2 Ito term is correct."""
+    S0, T, r, sigma = 100.0, 1.0, 0.05, 0.40
+    nb_paths = 500_000
+    process = BlackScholesProcess(S0=S0, T=T, nb_steps=50, drift=[r]*50, volatility=sigma)
+    scheme = EulerScheme()
+    paths = scheme.simulate_paths(process, nb_paths, seed=42)   # NOTE: raw array pre-two-factor; see Cross-Plan Coordination
+    ST = paths[:, -1]
+
+    expected = S0 * np.exp(r * T)
+    se = np.std(ST, ddof=1) / np.sqrt(nb_paths)
+    assert abs(np.mean(ST) - expected) < 3 * se, (
+        f"E[S_T]={np.mean(ST):.4f} vs expected {expected:.4f} (3*SE={3*se:.4f}) — Ito correction likely wrong"
+    )
+
+
+def test_risk_neutral_martingale_heston():
+    """Under Heston, E[S_T] = S0*exp(rT) regardless of variance params (spot is a Q-martingale after discounting)."""
+    S0, T, r = 100.0, 1.0, 0.05
+    nb_paths = 500_000
+    process = HestonProcess(S0=S0, v0=0.04, T=T, nb_steps=250, drift=[r]*250,
+                            kappa=2.0, theta=0.04, sigma=0.3, rho=-0.5)
+    scheme = EulerScheme()
+    paths = scheme.simulate_paths(process, nb_paths, seed=42)
+    ST = paths[:, -1]                                            # spot dimension
+    expected = S0 * np.exp(r * T)
+    se = np.std(ST, ddof=1) / np.sqrt(nb_paths)
+    # Full-truncation Euler introduces a small martingale bias; allow a modest multiple of SE.
+    assert abs(np.mean(ST) - expected) < 5 * se
+```
+
+**Test 5: Put-Call Parity under Log-Euler BS (robust, no benchmark needed)** 🔢
+
+```python
+def test_put_call_parity_log_euler():
+    """C - P = S0 - K*exp(-rT). Holds path-by-path; the most robust pipeline regression test."""
+    S0, K, T, r, sigma = 100.0, 100.0, 1.0, 0.05, 0.30
+    nb_paths = 200_000
+    process = BlackScholesProcess(S0=S0, T=T, nb_steps=50, drift=[r]*50, volatility=sigma)
+    scheme = EulerScheme()
+    paths = scheme.simulate_paths(process, nb_paths, seed=42)
+    ST = paths[:, -1]
+    df = np.exp(-r * T)
+    call = np.mean(np.maximum(ST - K, 0)) * df
+    put  = np.mean(np.maximum(K - ST, 0)) * df
+    assert np.isclose(call - put, S0 - K * df, atol=0.02)
+```
+
+**Test 6: Heston degenerates to Black-Scholes (bridges both plans)** 🔢
+
+```python
+def test_heston_degenerates_to_bs():
+    """vol-of-vol=0 and v0=theta => constant variance => Heston spot must match BS log-Euler exactly.
+    This simultaneously validates that the Log-Euler spot step and the (later) SimulationResult change agree."""
+    S0, K, T, r, v0 = 100.0, 100.0, 1.0, 0.05, 0.04
+    nb_paths = 200_000
+    heston = HestonProcess(S0=S0, v0=v0, T=T, nb_steps=100, drift=[r]*100,
+                           kappa=2.0, theta=v0, sigma=0.0, rho=0.0)   # sigma(vol-of-vol)=0, v0=theta
+    scheme = EulerScheme()
+    paths = scheme.simulate_paths(heston, nb_paths, seed=42)
+    price_heston = np.mean(np.maximum(paths[:, -1] - K, 0)) * np.exp(-r * T)
+
+    # Black-Scholes closed form with sigma = sqrt(v0)
+    from scipy.stats import norm
+    sig = np.sqrt(v0)
+    d1 = (np.log(S0/K) + (r + 0.5*sig**2)*T) / (sig*np.sqrt(T))
+    d2 = d1 - sig*np.sqrt(T)
+    bs = S0*norm.cdf(d1) - K*np.exp(-r*T)*norm.cdf(d2)
+    assert abs(price_heston - bs) < 0.05
+```
+
+**Test 7: `is_log_process=False` fallback actually runs Raw Euler (currently an untested branch)** 🔢
+
+The plan adds an `else` branch for future normal-distributed models, but no test exercises it — it would ship as dead, unverified code. This test forces the flag off and asserts the *old* Raw-Euler behavior returns (which, unlike Log-Euler, can produce non-positive prices under extreme vol).
+
+```python
+def test_raw_euler_fallback_when_not_log_process():
+    """With is_log_process=False, the scheme must use additive Raw Euler (can go negative)."""
+    process = BlackScholesProcess(S0=100.0, T=1.0, nb_steps=1, drift=[0.0], volatility=2.0)
+    process.is_log_process = False          # force the fallback branch
+    scheme = EulerScheme()
+    paths = scheme.simulate_paths(process, nb_paths=100_000, seed=42)
+    # Raw Euler with 200% vol and dt=1.0 is expected to breach zero — proving the branch is live.
+    assert np.any(paths <= 0), "Fallback branch did not behave like Raw Euler (expected some non-positive paths)"
+```
+
 ---
 
 #### [MODIFY] [test_matlab_sanity.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/tests/test_matlab_sanity.py)
@@ -290,7 +409,7 @@ def test_step_size_invariance():
 | [test_matlab_sanity.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/tests/test_matlab_sanity.py) | MODIFY | Re-calibrate tolerance after upgrade |
 | [test_mc_engine_greeks.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/tests/test_mc_engine_greeks.py) | MODIFY | Re-calibrate tolerance after upgrade |
 | [test_american_engine.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/tests/test_american_engine.py) | VERIFY | Re-run all tests, adjust tolerance if needed |
-| [test_log_euler.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/tests/test_log_euler.py) | NEW | Log-normal exactness, positivity, step-size invariance |
+| [test_log_euler.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/tests/test_log_euler.py) | NEW | Log-normal exactness, positivity, step-size invariance, **risk-neutral martingale (BS+Heston)**, **put-call parity**, **Heston→BS degeneracy**, **`is_log_process=False` fallback** |
 | [demonstrate_negative_prices.py](file:///c:/Users/jms_hp26/Desktop/Proj/pricing-engine/demonstrate_negative_prices.py) | DELETE | Removed from project root; functionality replaced by pytest |
 
 ---
@@ -676,7 +795,7 @@ def test_coupon_linearity_holds():
 
 ### A. Maturity-Bump Theta Breaks Grid Alignment (Especially for Barrier/Autocall Products)
 
-> [!WARNING]  
+> [!WARNING]
 > **Issue:** In `_theta`, the current implementation computes Theta via:
 > ```python
 > deriv_bumped.maturity -= dt_bump          # maturity shrinks by 1 day
@@ -685,8 +804,19 @@ def test_coupon_linearity_holds():
 > theta = (price_bumped - price) / dt_bump
 > ```
 > When `maturity` changes but `nb_steps` stays constant, every time step $dt$ shifts by a tiny amount. This causes the simulated paths to diverge from the base paths even when using the same random seed, because $\sqrt{dt}$ changes. For vanilla options this introduces moderate noise. For barrier and autocall products it is **catastrophic**: a tiny path shift can flip a barrier breach on/off, causing massive payoff jumps that dominate the finite difference.
-> 
-> **Fix (Elapsed-One-Day Method):** Instead of shrinking `maturity`, keep the simulation grid (`maturity`, `nb_steps`, `dt`) identical. To simulate "one day elapsed," bump the initial spot $S_0$ forward by one day of drift: $S_0^{bumped} = S_0 \cdot e^{r \cdot dt_{bump}}$. This keeps paths perfectly aligned with the base case and eliminates grid-induced noise.
+
+> [!CAUTION]
+> **A previously proposed "Elapsed-One-Day" fix was mathematically WRONG — do not use it.** That approach kept `maturity` / `nb_steps` / `dt` identical and instead advanced the spot by one day of carry ($S_0^{bumped} = S_0 e^{r\,dt}$). Because time-to-maturity $\tau$ is **not** reduced, the finite difference measures
+> $$\frac{V(S_0 e^{r\,dt},\ \tau) - V(S_0,\ \tau)}{dt} \approx \Delta \cdot S_0 \cdot r,$$
+> i.e. **delta × carry, not Theta**. For an ATM 1Y call ($S=100,r=5\%,\Delta\approx0.6$) it returns ≈ **+3/yr** while the true Theta is ≈ **−6.5/yr** (wrong sign and magnitude). Crucially, a *stability* test (low CV across seeds) does **not** catch this — a stable-but-wrong number passes. Theta requires a **correctness** test (below).
+
+> [!TIP]
+> **Correct fix — Common-Random-Numbers (CRN) forward difference.** Theta is $-\partial V/\partial\tau$ at **fixed** $S_0$, so we must genuinely reduce time-to-maturity while holding $S_0$ and the randomness fixed. The trick that removes grid noise without distorting the estimate:
+> 1. Simulate the base paths once on the base grid (`nb_steps` steps of size `dt = maturity/nb_steps`).
+> 2. **Reuse those exact paths, dropping the last time column:** `bumped_paths = base_paths[:, :-1]`. Because Euler builds each path forward from $S_0$, the first `nb_steps-1` columns *are* the process over $[0, \tau - dt]$ with **identical increments and identical $S_0$** — this is CRN by construction, zero re-simulation, zero $\sqrt{dt}$ mismatch.
+> 3. Re-price the derivative on `bumped_paths` with `maturity = τ - dt`, then `theta = (price_bumped - price) / dt`.
+>
+> This is correct (τ reduced, $S_0$ fixed), noise-controlled (barrier flips only where genuine), and needs no `deepcopy(market)` or rate-curve shift. Note `dt_bump` is now one grid step (`maturity/nb_steps`), not exactly 1/365; report Theta per year by dividing by that `dt`. Use a reasonably large `nb_steps` so the forward-difference step is small.
 
 #### Pre-Test: Demonstrate Theta Instability (Current Implementation)
 
@@ -742,45 +872,50 @@ def _theta(self, price, delta, gamma, vega, derivative, market):
         theta = -0.5 * sigma**2 * S**2 * gamma - r * S * delta + r * price
 
     elif self.model.name == "HESTON" or not is_vanilla:
-        dt_bump = 1.0 / 365.0
-
-        if derivative.maturity <= dt_bump:
+        # Need at least 2 steps so that dropping one column leaves a valid grid.
+        if self.nb_steps < 2:
             return 0.0
 
-        # --- Elapsed-One-Day Method ---
-        # Keep maturity, nb_steps, dt IDENTICAL to base case.
-        # Simulate "one day elapsed" by advancing S0 by one day of drift.
-        S_bumped = S * np.exp(r * dt_bump)
+        dt_grid = derivative.maturity / self.nb_steps   # one grid step (the bump size)
 
-        # Build a bumped market with the advanced spot price
-        market_bumped = copy.deepcopy(market)
-        market_bumped.underlying_asset.last_price = S_bumped
+        # --- Common-Random-Numbers forward difference (CORRECT + low noise) ---
+        # 1. Simulate base paths once with the SAME seed used for `price`.
+        scheme = EulerScheme()
+        base = scheme.simulate_paths(process=self.get_stochastic_process(derivative, market),
+                                     nb_paths=self.nb_paths, seed=self.random_seed)
+        base_paths = getattr(base, "spot_paths", base)   # SimulationResult-safe (post two-factor)
 
-        # Same derivative, same nb_steps, same dt — only S0 changes
-        process_bumped = self.get_stochastic_process(derivative, market_bumped)
-        price_bumped = self._get_price(derivative, process_bumped, market_bumped)
+        # 2. Reuse the exact same paths but drop the last time column:
+        #    these first (nb_steps-1) columns ARE the process over [0, tau - dt]
+        #    at fixed S0 with identical increments -> zero grid noise, true CRN.
+        bumped_paths = base_paths[:, :-1]
 
-        # Theta = (P(t + dt) - P(t)) / dt  (time moving forward)
-        theta = (price_bumped - price) / dt_bump
+        # 3. Re-price with time-to-maturity reduced by exactly one grid step.
+        deriv_bumped = copy.deepcopy(derivative)
+        deriv_bumped.maturity = derivative.maturity - dt_grid
+        price_bumped = self._get_price(deriv_bumped, self.get_stochastic_process(deriv_bumped, market),
+                                       current_market=market, pre_simulated_paths=bumped_paths)
+
+        # Theta = -dV/dtau = (V(tau - dt) - V(tau)) / dt
+        theta = (price_bumped - price) / dt_grid
     else:
         raise ValueError("Model not supported for calculating theta.")
 
     return theta
 ```
 
-#### Post-Test: Verify Theta Stability After Fix
+> [!NOTE]
+> `pre_simulated_paths=bumped_paths` reuses the base draws, so the `process` argument is only needed to satisfy the signature (it is not re-simulated). Both `MCPricingEngine._get_price` and `AmericanMCPricingEngine._get_price` accept `pre_simulated_paths`, so this works for exotics and American products alike. After the two-factor merge, `bumped_paths` is a raw spot array (from `.spot_paths[:, :-1]`); `_get_price`'s `getattr(x, "spot_paths", x)` unpacking handles it either way.
+
+#### Post-Test 1: Theta Stability After Fix (necessary but NOT sufficient)
 
 ```python
-def test_theta_stability_elapsed_day_method():
-    """AFTER FIX: Theta should be stable across seeds when using the elapsed-one-day method.
-
-    Same setup as the instability test, but now the coefficient of variation
-    should be dramatically lower (< 10%).
-    """
+def test_theta_stability_crn_method():
+    """Theta must be stable across seeds under the CRN method (low CV)."""
     from kernel.products.options.barrier_options import UpAndOutCallOption
 
     barrier_opt = UpAndOutCallOption(maturity=1.0, strike=100.0, barrier=120.0)
-    # ... same setup ...
+    # ... setup market with S0=100, sigma=30%, r=5%, and a reasonably large nb_steps (e.g. 100) ...
 
     thetas = []
     for seed in range(10):
@@ -790,30 +925,51 @@ def test_theta_stability_elapsed_day_method():
         theta = engine._theta(price, delta, gamma, vega, barrier_opt, market)
         thetas.append(theta)
 
-    std_theta = np.std(thetas)
-    mean_theta = np.mean(thetas)
-    coeff_of_variation = abs(std_theta / mean_theta) if abs(mean_theta) > 1e-8 else float('inf')
+    cv = abs(np.std(thetas) / np.mean(thetas)) if abs(np.mean(thetas)) > 1e-8 else float('inf')
+    assert cv < 0.15, f"Expected stable Theta (CV < 15%), got CV={cv:.2%}"
+```
 
-    print(f"Fixed method — Mean Theta: {mean_theta:.4f}, Std: {std_theta:.4f}, "
-          f"CV: {coeff_of_variation:.2%}")
-    # AFTER FIX: coefficient of variation should be much lower
-    assert coeff_of_variation < 0.15, (
-        f"Expected stable Theta (CV < 15%), got CV={coeff_of_variation:.2%}"
-    )
+#### Post-Test 2: Theta CORRECTNESS (this is the test the old plan was missing) 🔢
 
+Stability alone is worthless if the value is wrong. Force the exotic/Heston branch but under a **degenerate Heston that equals Black-Scholes** (vol-of-vol = 0, $v_0=\theta$), so the CRN Theta can be checked against the closed-form BS Theta.
 
-def test_theta_vanilla_unchanged():
-    """Verify that vanilla European option Theta still uses the analytical BS PDE
-    formula and is unaffected by the elapsed-one-day change."""
+```python
+def test_theta_correctness_vs_analytic_bs():
+    """CRN Theta on a European call priced under (degenerate) Heston must match analytical BS Theta.
+    Guards against the 'delta*carry instead of theta' class of bug."""
     from kernel.products.options.vanilla_options import EuropeanCallOption
+    from scipy.stats import norm
 
+    S0, K, T, r, v0 = 100.0, 100.0, 1.0, 0.05, 0.09   # sigma_BS = 0.30
+    # Model.HESTON forces the elif branch (NOT the analytical BS-vanilla branch).
+    # vol-of-vol=0, v0=theta => constant variance => equals Black-Scholes.
+    # ... build engine with Model.HESTON, nb_steps>=100, nb_paths large, and a Heston process
+    #     whose kappa*(theta-v)=0 path keeps v==v0 (sigma_volvol=0) ...
+
+    call = EuropeanCallOption(maturity=T, strike=K)
+    price = engine._get_price(call, process, market)
+    theta_mc = engine._theta(price, delta, gamma, vega, call, market)
+
+    # Analytical Black-Scholes call theta (per year, negative for a call):
+    sig = np.sqrt(v0)
+    d1 = (np.log(S0/K) + (r + 0.5*sig**2)*T) / (sig*np.sqrt(T))
+    d2 = d1 - sig*np.sqrt(T)
+    theta_bs = (-(S0*sig*norm.pdf(d1))/(2*np.sqrt(T)) - r*K*np.exp(-r*T)*norm.cdf(d2))
+
+    # Must at minimum have the correct SIGN and be within a reasonable band.
+    assert np.sign(theta_mc) == np.sign(theta_bs), f"Theta sign wrong: mc={theta_mc:.3f}, bs={theta_bs:.3f}"
+    assert abs(theta_mc - theta_bs) < 1.0, f"Theta off: mc={theta_mc:.3f}, bs={theta_bs:.3f}"
+```
+
+#### Post-Test 3: Vanilla BS branch unchanged (guard)
+
+```python
+def test_theta_vanilla_unchanged():
+    """Vanilla European under Model.BLACK_SCHOLES still uses the analytical BS PDE formula (untouched path)."""
+    from kernel.products.options.vanilla_options import EuropeanCallOption
     call = EuropeanCallOption(maturity=1.0, strike=100.0)
     # ... setup BS model ...
-    # Theta for vanilla BS should match: -0.5 * sigma^2 * S^2 * gamma - r*S*delta + r*price
-    # (this path is unchanged in the code)
-
     theta = engine._theta(price, delta, gamma, vega, call, market)
-    # Compare against analytical Black-Scholes theta
     assert np.isclose(theta, analytical_bs_theta, atol=0.5)
 ```
 
@@ -838,12 +994,9 @@ The proposed Phoenix fix (Section "Products Payoff Review §1A") shows the loop 
 
 The current proposed snippet is incomplete without this — the implementer might miss it.
 
-## 3. Theta Elapsed-One-Day Method — `get_fwd_rate` Impact
+## 3. Theta — resolved by the CRN method (obsolete concern)
 
-The proposed Theta fix bumps `S0` but keeps the same `derivative` (same `maturity`). When `get_stochastic_process` constructs the drift array, it calls `market.get_fwd_rate(i*dt, (i+1)*dt)`. Since we also bumped the market's spot but did **not** shift the rate curve forward by one day, the drift array is technically looking at rates starting from today, not from tomorrow. For most flat or slowly-moving curves this is negligible, but the document should acknowledge this as a known approximation:
-
-> [!TIP]
-> The elapsed-one-day method is a first-order approximation. A fully rigorous implementation would also shift the rate curve forward by `dt_bump` (i.e., use `market.get_fwd_rate(dt_bump + i*dt, dt_bump + (i+1)*dt)`). For the purposes of this engine and typical term structures, the current approximation is sufficient.
+An earlier draft used an "elapsed-one-day" spot bump and raised a concern about whether the rate curve should also be shifted forward. **That concern is now moot:** the corrected **CRN method** (see Pricing Engines Review §3) reuses the base simulation's own paths (`base_paths[:, :-1]`) and only reduces `maturity` by one grid step. No spot bump, no `deepcopy(market)`, no rate-curve shift is involved, so there is no such approximation to reconcile. The only residual approximation is the standard forward-difference truncation error, controlled by using a sufficiently large `nb_steps` (small `dt`).
 
 ## 4. Document Structure
 
@@ -947,18 +1100,19 @@ uv run pytest tests/ -v
 
 ---
 
-## Phase 3: Theta Elapsed-One-Day Fix (Isolated Engine Change)
+## Phase 3: Theta CRN Fix (Isolated Engine Change)
 
 **Why third:** This only touches the `_theta` method in `mc_pricing_engine.py`. The analytical BS PDE path (vanilla options) is completely unchanged. Only the Heston/exotic branch is modified.
 
-**Branch:** `fix/theta-elapsed-day`
+**Branch:** `fix/theta-crn`
 
 **Actions:**
 - [ ] **Pre-test first (before any code change):** Write and run `test_theta_instability_current_method` to record the baseline CV. Commit the test with the recorded values.
 - [ ] Modify `_theta` in `mc_pricing_engine.py`:
-  - Replace `deriv_bumped.maturity -= dt_bump` with the elapsed-one-day spot bump
-  - Use `copy.deepcopy(market)` to create bumped market
-- [ ] Write `test_theta_stability_elapsed_day_method` (post-fix test)
+  - Replace `deriv_bumped.maturity -= dt_bump` (+ re-simulation) with the **CRN forward difference**: reduce `maturity` by one grid step, reuse `base_paths[:, :-1]` via `pre_simulated_paths`.
+  - Do **NOT** use the delta×carry "elapsed-one-day" spot bump (it computes the wrong Greek — see Pricing Engines Review §3 CAUTION).
+- [ ] Write `test_theta_stability_crn_method` (post-fix stability test)
+- [ ] Write `test_theta_correctness_vs_analytic_bs` (**correctness** test — degenerate Heston vs analytical BS Theta; this is the one that catches the delta×carry bug)
 - [ ] Write `test_theta_vanilla_unchanged` (guard test)
 
 **Gate Tests:**
@@ -967,7 +1121,10 @@ uv run pytest tests/ -v
 uv run pytest tests/test_mc_engine_greeks.py::test_theta_instability_current_method -v
 
 # 2. After fix: stability test passes
-uv run pytest tests/test_mc_engine_greeks.py::test_theta_stability_elapsed_day_method -v
+uv run pytest tests/test_mc_engine_greeks.py::test_theta_stability_crn_method -v
+
+# 2b. After fix: CORRECTNESS test passes (right sign + right magnitude)
+uv run pytest tests/test_mc_engine_greeks.py::test_theta_correctness_vs_analytic_bs -v
 
 # 3. Vanilla Theta unchanged
 uv run pytest tests/test_mc_engine_greeks.py::test_theta_vanilla_unchanged -v
