@@ -263,11 +263,29 @@ class MCPricingEngine(AbstractPricingEngine):
         return (price_up - price_down) / (2 * epsilon)
 
     def _theta(self, price: float, delta: float, gamma: float, vega: float, derivative: AbstractOption, market: Market) -> float:
+        """Compute Theta = -dV/dtau using the BS PDE (vanilla) or CRN forward difference (exotic/Heston).
+
+        The CRN method reuses the base simulation paths with the last time column
+        dropped, giving a genuine reduction in time-to-maturity at fixed S0 with
+        identical random increments — zero grid noise, no sqrt(dt) mismatch.
+
+        Args:
+            price: The base price of the derivative.
+            delta: The delta of the derivative.
+            gamma: The gamma of the derivative.
+            vega: The vega of the derivative.
+            derivative: The derivative being priced.
+            market: The market data.
+
+        Returns:
+            The Theta value (per year).
+        """
         S = market.underlying_asset.last_price
         r = market.get_rate(1/365)
         
         is_vanilla = isinstance(derivative, (EuropeanCallOption, EuropeanPutOption))
         if self.model.name == "BLACK_SCHOLES" and is_vanilla:
+            # Analytical BS PDE theta (unchanged)
             if hasattr(derivative, "strike"):
                 K = derivative.strike
             else:
@@ -276,18 +294,35 @@ class MCPricingEngine(AbstractPricingEngine):
             theta = -0.5 * sigma**2 * S**2 * gamma - r * S * delta + r * price
             
         elif self.model.name == "HESTON" or not is_vanilla:
-            dt_bump = 1.0 / 365.0 
-            
-            if derivative.maturity <= dt_bump:
-                return 0.0 
-            
+            # CRN forward difference: need at least 2 steps so that dropping
+            # the last column leaves a valid grid with >= 1 time step.
+            if self.nb_steps < 2:
+                return 0.0
+
+            dt_grid = derivative.maturity / self.nb_steps  # one grid step = bump size
+
+            # 1. Simulate base paths once with the SAME seed used for `price`.
+            process = self.get_stochastic_process(derivative, market)
+            scheme = EulerScheme()
+            base_paths = scheme.simulate_paths(process, self.nb_paths, self.random_seed)
+
+            # 2. Drop the last time column: the first (nb_steps) columns ARE the
+            #    process over [0, tau - dt] at fixed S0 with identical increments.
+            #    This is CRN by construction — zero re-simulation, zero dt mismatch.
+            bumped_paths = base_paths[:, :-1]
+
+            # 3. Re-price with time-to-maturity reduced by exactly one grid step.
             deriv_bumped = copy.deepcopy(derivative)
-            deriv_bumped.maturity -= dt_bump
-            
+            deriv_bumped.maturity = derivative.maturity - dt_grid
+
             process_bumped = self.get_stochastic_process(deriv_bumped, market)
-            price_bumped = self._get_price(deriv_bumped, process_bumped, market)
-            
-            theta = (price_bumped - price) / dt_bump
+            price_bumped = self._get_price(
+                deriv_bumped, process_bumped,
+                current_market=market, pre_simulated_paths=bumped_paths
+            )
+
+            # Theta = (V(tau - dt) - V(tau)) / dt
+            theta = (price_bumped - price) / dt_grid
         else:
             raise ValueError("Model not supported for calculating theta.")
 
