@@ -71,9 +71,9 @@ def test_matlab_european_options():
     process_put = engine.get_stochastic_process(put_option, market)
     put_price = engine._get_price(put_option, process_put, current_market=market)
 
-    # Since it is Monte Carlo, we check within a small tolerance (e.g. 5 cents)
-    assert np.isclose(call_price, expected_call, atol=0.05), \
+    # Since it is Monte Carlo, we check within a small tolerance (e.g. 3 cents)
+    assert np.isclose(call_price, expected_call, atol=0.03), \
         f"Call price {call_price:.4f} did not match MATLAB {expected_call:.4f}"
         
-    assert np.isclose(put_price, expected_put, atol=0.05), \
+    assert np.isclose(put_price, expected_put, atol=0.03), \
         f"Put price {put_price:.4f} did not match MATLAB {expected_put:.4f}"

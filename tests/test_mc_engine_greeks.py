@@ -130,11 +130,11 @@ def test_finite_difference_vs_analytic():
     
     bs_delta, bs_gamma, bs_vega = _bs_call_greeks(S, K, T, r, sigma)
     
-    # Tolerances are relatively loose due to Monte Carlo noise, but should be close
-    assert np.isclose(mc_delta, bs_delta, atol=0.01)
-    assert np.isclose(mc_gamma, bs_gamma, atol=0.005)
+    # Tolerances tightened after Log-Euler exactness upgrade
+    assert np.isclose(mc_delta, bs_delta, atol=0.005)
+    assert np.isclose(mc_gamma, bs_gamma, atol=0.002)
     # Note: BS vega is typically scaled by 0.01 for a 1% move, but our formula yields the raw derivative.
     # We must ensure mc_vega matches raw or scaled. Our mc_vega gives raw derivative (price_up - price_down) / (2 * 0.01).
     # wait, in mc_pricing_engine: vega = (price_up - price_down) / (2 * 0.01) which approximates dP/dSigma exactly.
     # bs_vega is dP/dSigma. Let's assert raw.
-    assert np.isclose(mc_vega, bs_vega, rtol=0.05)
+    assert np.isclose(mc_vega, bs_vega, rtol=0.02)
