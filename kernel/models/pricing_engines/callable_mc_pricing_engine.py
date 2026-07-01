@@ -79,7 +79,7 @@ class CallableMCPricingEngine(MCPricingEngine):
             derivative.coupon_rate = mid_coupon
 
             # Compute the price for the current coupon using pre-simulated paths
-            price = self._get_price(derivative, process, pre_simulated_paths=pre_simulated_paths)
+            price = self._get_price(derivative, process, current_market=self.market, pre_simulated_paths=pre_simulated_paths)
 
             # Check if the price is close enough to the target price
             if abs(price - target_price) < epsilon:

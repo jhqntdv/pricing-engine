@@ -2,22 +2,26 @@ from .abstract_pricing_engine import AbstractPricingEngine
 from ..stochastic_processes import StochasticProcess
 from kernel.products.options.abstract_option import AbstractOption
 from kernel.market_data.market import Market
-from kernel.products.options.american_options import AmericanAbstractOption, AmericanPutOption
-from kernel.tools import ObservationFrequency
+from kernel.products.options.american_options import AmericanAbstractOption
 from utils.pricing_settings import PricingSettings
 from utils.pricing_results import PricingResults
-from kernel.models.stochastic_processes import BlackScholesProcess, HestonProcess
 from kernel.models.discretization_schemes.euler_scheme import EulerScheme
 from .mc_pricing_engine import MCPricingEngine
 import numpy as np
-import pandas as pd
 
 
 class AmericanMCPricingEngine(MCPricingEngine):
-    """A Monte Carlo pricing engine for classic financial derivatives (no barrier, no asian payoff ...)
+    """A Monte Carlo pricing engine for American and Bermudan options using the Longstaff-Schwartz algorithm.
 
-    This class uses Monte Carlo simulation to compute the price of derivatives
-    and can be extended to compute Greeks or other risk measures.
+    This engine uses least-squares Monte Carlo (LSM) backward induction to determine the optimal early
+    exercise strategy and compute the price of derivatives with early exercise features.
+
+    # TBD (Future Enhancements):
+    # 1. Dividend Support: The engine currently relies on the base stochastic process which does not natively 
+    #    support continuous dividend yields (q) or discrete cash dividends. This is particularly important for 
+    #    pricing American Call options, which are never optimally exercised early without a dividend yield.
+    # 2. American Barrier Options: The backward induction loop does not currently check for barrier knock-outs. 
+    #    Support needs to be added to zero out the continuation/immediate values for paths that breach a barrier.
     """
     def __init__(self, market: Market, settings: PricingSettings) -> None: # type: ignore
         """Initialize the American Monte Carlo pricing engine.
@@ -44,23 +48,30 @@ class AmericanMCPricingEngine(MCPricingEngine):
             The option price (and standard deviation if requested).
         """
         if current_market is None:
-            current_market = self.market
+            raise ValueError("current_market must be explicitly provided to ensure drift and discounting share the same curve.")
         
-        scheme = EulerScheme()
-        paths = scheme.simulate_paths(process=stochastic_process, nb_paths=self.nb_paths, seed=self.random_seed)
+        if pre_simulated_paths is not None:
+            paths = pre_simulated_paths
+        else:
+            scheme = EulerScheme()
+            paths = scheme.simulate_paths(process=stochastic_process, nb_paths=self.nb_paths, seed=self.random_seed)
 
 
         dt = derivative.maturity / self.nb_steps
 
         exercise_indices = None
         if derivative.exercise_times is not None:
-            exercise_indices = set(int(t_ex / dt) for t_ex in derivative.exercise_times)
+            exercise_indices = set(int(round(t_ex / dt)) for t_ex in derivative.exercise_times)
 
-        CF = derivative.intrinsic_payoff(paths[:, -1])
-        for t in range(self.nb_steps - 2, -1, -1):
-            df_forward = current_market.get_fwd_discount_factor(dt * (t + 1), dt * (t + 2))
-            discounted_CF = CF * df_forward
-            CF = discounted_CF.copy()
+        # L5: Normalize regression basis by strike (moneyness) for numerical stability.
+        # Using x = S/K keeps all polynomial terms near unit scale, improving
+        # the condition number of the design matrix for np.linalg.lstsq.
+        normalizer = derivative.strike if hasattr(derivative, 'strike') else 1.0
+
+        cashflow = derivative.intrinsic_payoff(paths[:, -1])
+        for t in range(self.nb_steps - 1, 0, -1):
+            df_step = current_market.get_fwd_discount_factor(dt * t, dt * (t + 1))
+            cashflow = cashflow * df_step
             
             if exercise_indices is None or t in exercise_indices: 
                 immediate = derivative.intrinsic_payoff(paths[:, t])
@@ -68,21 +79,30 @@ class AmericanMCPricingEngine(MCPricingEngine):
 
                 if np.any(in_money):
                     paths_in_money = paths[in_money, t]
+                    normalized = paths_in_money / normalizer
                     x_matrix = np.column_stack([
                         np.ones(np.sum(in_money)),
-                        paths_in_money,
-                        paths_in_money ** 2
+                        normalized,
+                        normalized ** 2
                     ])
-                    y_vector = discounted_CF[in_money]
+                    y_vector = cashflow[in_money]
                     coeff, _, _, _ = np.linalg.lstsq(x_matrix, y_vector, rcond=None)
-                    cont_val = coeff[0] + coeff[1] * paths_in_money + coeff[2] * (paths_in_money ** 2)
+                    cont_val = coeff[0] + coeff[1] * normalized + coeff[2] * (normalized ** 2)
                     exercise = immediate[in_money] >= cont_val
-                    CF[in_money] = np.where(exercise, immediate[in_money], discounted_CF[in_money])
+                    cashflow[in_money] = np.where(exercise, immediate[in_money], cashflow[in_money])
 
         df_first = current_market.get_discount_factor(dt)
-        discounted_cf = df_first * CF
-        price = np.mean(discounted_cf)
+        discounted_cashflow = df_first * cashflow
+        price = np.mean(discounted_cashflow)
+        
+        # L1 Edge case: Support exercise at valuation date (t=0)
+        # If the option is already deeply ITM, immediate exercise might be better than the holding value.
+        initial_spot = np.array([paths[0, 0]])
+        immediate_t0 = derivative.intrinsic_payoff(initial_spot)[0]
+        if immediate_t0 > price:
+            price = immediate_t0
+            
         if return_std:
-            std_dev = np.std(discounted_cf, ddof=1) / np.sqrt(len(discounted_cf))
+            std_dev = np.std(discounted_cashflow, ddof=1) / np.sqrt(len(discounted_cashflow))
             return price, std_dev
         return price

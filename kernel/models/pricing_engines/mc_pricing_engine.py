@@ -106,31 +106,16 @@ class MCPricingEngine(AbstractPricingEngine):
         pricing_results.std_dev = std_dev
 
         if self.enable_greeks:
-            # OPTIMIZED DELTA AND GAMMA (Shares simulations)
-            epsilon_spot = 1.0
+            delta, gamma = self._delta_gamma(derivative, price)
+            vega = self._vega(derivative)
+            rho = self._rho(derivative)
+            theta = self._theta(price, delta, gamma, vega, derivative, self.market)
             
-            process_up = self.get_stochastic_process(derivative, self.market)
-            process_down = self.get_stochastic_process(derivative, self.market)
-            process_up.S0 += epsilon_spot
-            process_down.S0 -= epsilon_spot
-            
-            price_up = self._get_price(derivative, process_up, self.market)
-            price_down = self._get_price(derivative, process_down, self.market)
-            
-            delta = ((price_up - price_down) / (2 * epsilon_spot)) * position
-            gamma = ((price_up + price_down - 2 * price) / (epsilon_spot ** 2)) * position
-            
-            vega = self.get_vega(derivative=derivative, epsilon=0.01) * position
-            rho = self.get_rho(derivative=derivative, epsilon=0.0001) * position
-            
-            # For Theta, pass the un-positioned greeks
-            theta = self.get_theta(price=price, delta=delta/position, gamma=gamma/position, vega=vega/position, derivative=derivative, market=self.market) * position
-            
-            pricing_results.set_greek("delta", delta)
-            pricing_results.set_greek("gamma", gamma)
-            pricing_results.set_greek("vega", vega)
-            pricing_results.set_greek("rho", rho)
-            pricing_results.set_greek("theta", theta)
+            pricing_results.set_greek("delta", delta * position)
+            pricing_results.set_greek("gamma", gamma * position)
+            pricing_results.set_greek("vega", vega * position)
+            pricing_results.set_greek("rho", rho * position)
+            pricing_results.set_greek("theta", theta * position)
         
         return pricing_results
     
@@ -199,9 +184,8 @@ class MCPricingEngine(AbstractPricingEngine):
         Returns:
             The average price (and standard deviation if requested).
         """
-        # Fix: Allow passing a specific market to ensure discount factor and drift rates match (resolves Rho calculation error).
         if current_market is None:
-            current_market = self.market
+            raise ValueError("current_market must be explicitly provided to ensure drift and discounting share the same curve.")
             
         if pre_simulated_paths is not None:
             price_paths = pre_simulated_paths
@@ -221,59 +205,25 @@ class MCPricingEngine(AbstractPricingEngine):
             return price, std_dev
         return price
 
-    def get_delta(self, derivative: AbstractOption, epsilon: float = 1) -> float:
-        """Compute the Delta of the option.
+    def _spot_eps(self, derivative: AbstractOption) -> float:
+        return 1.0
 
-        Args:
-            derivative: The derivative being priced.
-            epsilon: The shift applied to the spot price. Defaults to 1.
-
-        Returns:
-            The Delta value.
-        """
+    def _delta_gamma(self, derivative: AbstractOption, base_price: float) -> tuple[float, float]:
+        epsilon_spot = self._spot_eps(derivative)
         process_up = self.get_stochastic_process(derivative, self.market)
         process_down = self.get_stochastic_process(derivative, self.market)
-        process_up.S0 += epsilon  
-        process_down.S0 -= epsilon
-    
+        process_up.S0 += epsilon_spot
+        process_down.S0 -= epsilon_spot
+        
         price_up = self._get_price(derivative, process_up, self.market)
         price_down = self._get_price(derivative, process_down, self.market)
-    
-        return (price_up - price_down) / (2 * epsilon)
-    
-    def get_gamma(self, derivative: AbstractOption, epsilon: float = 1) -> float:
-        """Compute the Gamma of the option.
+        
+        delta = (price_up - price_down) / (2 * epsilon_spot)
+        gamma = (price_up + price_down - 2 * base_price) / (epsilon_spot ** 2)
+        return delta, gamma
 
-        Args:
-            derivative: The derivative being priced.
-            epsilon: The shift applied to the spot price. Defaults to 1.
-
-        Returns:
-            The Gamma value.
-        """
-        base_process = self.get_stochastic_process(derivative, self.market)
-        base_price = self._get_price(derivative, base_process, self.market)
-   
-        process_up = self.get_stochastic_process(derivative, self.market)
-        process_up.S0 += epsilon 
-        process_down = self.get_stochastic_process(derivative, self.market)
-        process_down.S0 -= epsilon
-    
-        price_up = self._get_price(derivative, process_up, self.market)
-        price_down = self._get_price(derivative, process_down, self.market)
-    
-        return (price_up + price_down - 2 * base_price) / (epsilon ** 2)
-
-    def get_vega(self, derivative: AbstractOption, epsilon: float = 0.01) -> float:
-        """Compute the Vega of the option.
-
-        Args:
-            derivative: The derivative being priced.
-            epsilon: The shift applied to the volatility. Defaults to 0.01.
-
-        Returns:
-            The Vega value.
-        """
+    def _vega(self, derivative: AbstractOption) -> float:
+        epsilon = 0.01
         vega = 0.0
         if self.model.name == "BLACK_SCHOLES":
             process_up = self.get_stochastic_process(derivative, self.market) 
@@ -289,7 +239,6 @@ class MCPricingEngine(AbstractPricingEngine):
             process_up = self.get_stochastic_process(derivative, self.market)
             process_down = self.get_stochastic_process(derivative, self.market)
             
-            # 修正：Vega 應該針對波動率平移，再轉回變異數，避免數值衝擊過大
             base_vol = np.sqrt(process_up.v0)
             process_up.v0 = (base_vol + epsilon) ** 2
             process_down.v0 = (base_vol - epsilon) ** 2
@@ -299,17 +248,9 @@ class MCPricingEngine(AbstractPricingEngine):
             vega = (price_up - price_down) / (2 * epsilon)
 
         return vega
-    
-    def get_rho(self, derivative: AbstractOption, epsilon: float = 0.0001):
-        """Compute the Rho of the option.
 
-        Args:
-            derivative: The derivative being priced.
-            epsilon: The shift applied to the interest rate curve. Defaults to 0.0001.
-
-        Returns:
-            The Rho value.
-        """
+    def _rho(self, derivative: AbstractOption) -> float:
+        epsilon = 0.0001
         epsilon_fit = epsilon * 100 
         market_up = self.market.bump_flat_yield_curve(epsilon_fit)
         market_down = self.market.bump_flat_yield_curve(-epsilon_fit)
@@ -317,10 +258,94 @@ class MCPricingEngine(AbstractPricingEngine):
         process_up = self.get_stochastic_process(derivative, market_up)
         process_down = self.get_stochastic_process(derivative, market_down)
         
-        # 修正：必須將 market_up 與 market_down 傳入 _get_price 供折現使用
         price_up = self._get_price(derivative, process_up, market_up)
         price_down = self._get_price(derivative, process_down, market_down)
         return (price_up - price_down) / (2 * epsilon)
+
+    def _theta(self, price: float, delta: float, gamma: float, vega: float, derivative: AbstractOption, market: Market) -> float:
+        S = market.underlying_asset.last_price
+        r = market.get_rate(1/365)
+        
+        is_vanilla = isinstance(derivative, (EuropeanCallOption, EuropeanPutOption))
+        if self.model.name == "BLACK_SCHOLES" and is_vanilla:
+            if hasattr(derivative, "strike"):
+                K = derivative.strike
+            else:
+                K = market.underlying_asset.last_price
+            sigma = market.get_volatility(K, derivative.maturity)
+            theta = -0.5 * sigma**2 * S**2 * gamma - r * S * delta + r * price
+            
+        elif self.model.name == "HESTON" or not is_vanilla:
+            dt_bump = 1.0 / 365.0 
+            
+            if derivative.maturity <= dt_bump:
+                return 0.0 
+            
+            deriv_bumped = copy.deepcopy(derivative)
+            deriv_bumped.maturity -= dt_bump
+            
+            process_bumped = self.get_stochastic_process(deriv_bumped, market)
+            price_bumped = self._get_price(deriv_bumped, process_bumped, market)
+            
+            theta = (price_bumped - price) / dt_bump
+        else:
+            raise ValueError("Model not supported for calculating theta.")
+
+        return theta
+
+    def get_delta(self, derivative: AbstractOption, epsilon: float = 1) -> float:
+        """Compute the Delta of the option.
+
+        Args:
+            derivative: The derivative being priced.
+            epsilon: Ignored. Used internal _spot_eps.
+
+        Returns:
+            The Delta value.
+        """
+        base_process = self.get_stochastic_process(derivative, self.market)
+        base_price = self._get_price(derivative, base_process, self.market)
+        delta, _ = self._delta_gamma(derivative, base_price)
+        return delta
+    
+    def get_gamma(self, derivative: AbstractOption, epsilon: float = 1) -> float:
+        """Compute the Gamma of the option.
+
+        Args:
+            derivative: The derivative being priced.
+            epsilon: Ignored. Used internal _spot_eps.
+
+        Returns:
+            The Gamma value.
+        """
+        base_process = self.get_stochastic_process(derivative, self.market)
+        base_price = self._get_price(derivative, base_process, self.market)
+        _, gamma = self._delta_gamma(derivative, base_price)
+        return gamma
+
+    def get_vega(self, derivative: AbstractOption, epsilon: float = 0.01) -> float:
+        """Compute the Vega of the option.
+
+        Args:
+            derivative: The derivative being priced.
+            epsilon: Ignored.
+
+        Returns:
+            The Vega value.
+        """
+        return self._vega(derivative)
+    
+    def get_rho(self, derivative: AbstractOption, epsilon: float = 0.0001) -> float:
+        """Compute the Rho of the option.
+
+        Args:
+            derivative: The derivative being priced.
+            epsilon: Ignored.
+
+        Returns:
+            The Rho value.
+        """
+        return self._rho(derivative)
         
     def get_theta(self, price: float, delta: float, gamma: float, vega: float, derivative: AbstractOption, market: Market) -> float:
         """Compute the Theta of the option using finite difference or Black-Scholes PDE.
@@ -336,35 +361,4 @@ class MCPricingEngine(AbstractPricingEngine):
         Returns:
             The Theta value.
         """
-        S = market.underlying_asset.last_price
-        r = market.get_rate(1/365)
-        
-        is_vanilla = isinstance(derivative, (EuropeanCallOption, EuropeanPutOption))
-        if self.model.name == "BLACK_SCHOLES" and is_vanilla:
-            if hasattr(derivative, "strike"):
-                K = derivative.strike
-            else:
-                K = market.underlying_asset.last_price
-            sigma = market.get_volatility(K, derivative.maturity)
-            theta = -0.5 * sigma**2 * S**2 * gamma - r * S * delta + r * price
-            
-        elif self.model.name == "HESTON" or not is_vanilla:
-            # 用時間有限差分法 (Finite Difference)
-            dt_bump = 1.0 / 365.0 # 假設減去 1 天
-            
-            if derivative.maturity <= dt_bump:
-                return 0.0 # 快要到期時不計算 Theta 或回傳 0
-            
-            # 建立一個到期日減少 1 天的複製合約
-            deriv_bumped = copy.deepcopy(derivative)
-            deriv_bumped.maturity -= dt_bump
-            
-            process_bumped = self.get_stochastic_process(deriv_bumped, market)
-            price_bumped = self._get_price(deriv_bumped, process_bumped, market)
-            
-            # Theta 表示為時間流逝造成價格的變化
-            theta = (price_bumped - price) / dt_bump
-        else:
-            raise ValueError("Model not supported for calculating theta.")
-
-        return theta
+        return self._theta(price, delta, gamma, vega, derivative, market)

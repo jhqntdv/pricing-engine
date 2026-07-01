@@ -43,7 +43,6 @@ class EulerScheme:
         dW = process.get_random_increments(nb_paths, seed)
 
         for i in range(process.nb_steps):
-            t = i * dt
             x = paths[:, i]
             dW_i = dW[:, i]
             drift = process.get_drift(i, x)
@@ -69,7 +68,6 @@ class EulerScheme:
         dt = process.dt
         dW1, dW2 = process.get_random_increments(nb_paths, seed)
         for i in range(process.nb_steps):
-            t = i * dt
             x = paths[:, i, 0]
             v = paths[:, i, 1]
             dW1_i = dW1[:, i]
