@@ -117,8 +117,8 @@ class Phoenix(AbstractAutocall):
         payoffs = np.zeros(nb_paths)
         # active[i] = True if path i has not yet been autocalled
         active = np.ones(nb_paths, dtype=bool)
-        # Accumulated coupon per path (may include missed coupons for is_plus)
-        cumulative_coupons = np.zeros(nb_paths)
+        # Track the present value of all coupons paid so far (discounted at payment date)
+        pv_cumulative_coupons = np.zeros(nb_paths)
         missed_coupons = np.zeros(nb_paths)
 
         for t in range(1, num_observations):
@@ -129,13 +129,16 @@ class Phoenix(AbstractAutocall):
             # --- Autocall event ---
             autocalled = active & (spot_t >= self.autocall_barrier)
             if np.any(autocalled):
-                autocall_payoff = 100.0 + cumulative_coupons + self.coupon_rate + missed_coupons
-                payoffs[autocalled] = autocall_payoff[autocalled] * df
+                # Current period coupon + any missed coupons, discounted at current time
+                final_coupon_pv = (self.coupon_rate + missed_coupons[autocalled]) * df
+                # Principal discounted at autocall time + all previously discounted coupons
+                payoffs[autocalled] = 100.0 * df + pv_cumulative_coupons[autocalled] + final_coupon_pv
                 active[autocalled] = False
 
             # --- Coupon event (only for still-active paths, not already autocalled) ---
             coupon_paid = active & (spot_t >= self.coupon_barrier)
-            cumulative_coupons[coupon_paid] += self.coupon_rate + missed_coupons[coupon_paid]
+            pv_coupon = (self.coupon_rate + missed_coupons[coupon_paid]) * df
+            pv_cumulative_coupons[coupon_paid] += pv_coupon
             missed_coupons[coupon_paid] = 0.0
 
             # --- Missed coupon accumulation (for is_plus) ---
@@ -153,16 +156,16 @@ class Phoenix(AbstractAutocall):
             below_capital = active & (final_spot < self.capital_barrier)
 
             # Above capital barrier: return 100 + accumulated coupons
-            payoffs[above_capital] = (100.0 + cumulative_coupons[above_capital] + missed_coupons[above_capital]) * df_final
+            payoffs[above_capital] = 100.0 * df_final + pv_cumulative_coupons[above_capital] + missed_coupons[above_capital] * df_final
 
             # Below capital barrier
             if np.any(below_capital):
                 if self.is_security:
                     gearing = 100.0 / self.capital_barrier
                     loss = (self.capital_barrier - final_spot[below_capital]) * gearing
-                    payoffs[below_capital] = np.maximum(0.0, 100.0 - loss + cumulative_coupons[below_capital]) * df_final
+                    payoffs[below_capital] = np.maximum(0.0, 100.0 - loss) * df_final + pv_cumulative_coupons[below_capital]
                 else:
-                    payoffs[below_capital] = np.maximum(0.0, final_spot[below_capital] + cumulative_coupons[below_capital]) * df_final
+                    payoffs[below_capital] = np.maximum(0.0, final_spot[below_capital]) * df_final + pv_cumulative_coupons[below_capital]
 
         return payoffs
 

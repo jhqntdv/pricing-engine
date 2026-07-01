@@ -36,30 +36,33 @@ class TwinWin(AbstractParticipationProduct):
         self.upper_barrier = upper_barrier
         self.lower_barrier = lower_barrier
 
-    def payoff(self, paths: np.ndarray) -> float:
+    def payoff(self, paths: np.ndarray) -> np.ndarray:
         """Calculates the Twin Win payoff.
 
         Args:
-            paths (np.ndarray): Paths of underlying prices.
+            paths (np.ndarray): Paths of underlying prices (nb_paths, nb_steps+1).
 
         Returns:
-            float: The Twin Win payoff.
+            np.ndarray: The Twin Win payoff for each path.
         """
-        final_price: float = paths[-1] # Final price of the underlying
-        initial_price : float = self.initial_spot if getattr(self, "initial_spot", None) is not None else paths[0]
-        performance: float = (final_price / initial_price) * 100
-        payoff = 100
+        paths = np.atleast_2d(paths)
+        final_price = paths[:, -1] # Final price of the underlying
+        initial_price = self.initial_spot if getattr(self, "initial_spot", None) is not None else paths[:, 0]
+        performance = (final_price / initial_price) * 100
+        
+        payoff = np.full(performance.shape, 100.0)
+        
         # If the upper barrier is crossed
-        if performance > self.upper_barrier:
-            payoff = 100 + self.rebate  # Fixed refund
+        upper_mask = performance > self.upper_barrier
+        payoff[upper_mask] = 100.0 + self.rebate
+        
         # If the lower barrier is crossed
-        elif performance < self.lower_barrier:
-            # Loss similar to a Put Down-and-In
-            loss = self.leverage * (performance - 100)
-            payoff =  100 + loss  # Loss
-        else:
-            # Participation within the range defined by the barriers
-            payoff = self.leverage * abs(performance - 100) + 100
+        lower_mask = performance < self.lower_barrier
+        payoff[lower_mask] = 100.0 + self.leverage * (performance[lower_mask] - 100.0)
+        
+        # Participation within the range defined by the barriers
+        range_mask = ~(upper_mask | lower_mask)
+        payoff[range_mask] = self.leverage * np.abs(performance[range_mask] - 100.0) + 100.0
 
         return payoff
 
@@ -111,32 +114,35 @@ class Airbag(AbstractParticipationProduct):
         self.upper_barrier = upper_barrier
         self.lower_barrier = lower_barrier
 
-    def payoff(self, paths: np.ndarray) -> float:
+    def payoff(self, paths: np.ndarray) -> np.ndarray:
         """Calculates the Airbag payoff.
 
         Args:
-            paths (np.ndarray): Paths of underlying prices.
+            paths (np.ndarray): Paths of underlying prices (nb_paths, nb_steps+1).
 
         Returns:
-            float: The Airbag payoff.
+            np.ndarray: The Airbag payoff for each path.
         """
-        final_price: float = paths[-1]  # Final price of the underlying
-        initial_price: float = self.initial_spot if getattr(self, "initial_spot", None) is not None else paths[0]
-        performance: float =  (final_price / initial_price) * 100
-        payoff = 100
+        paths = np.atleast_2d(paths)
+        final_price = paths[:, -1]  # Final price of the underlying
+        initial_price = self.initial_spot if getattr(self, "initial_spot", None) is not None else paths[:, 0]
+        performance = (final_price / initial_price) * 100
+        
+        payoff = np.full(performance.shape, 100.0)
+        
+        upper_mask = performance > self.upper_barrier
+        lower_mask = performance < self.lower_barrier
+        mid_mask = (performance < 100.0) & (~lower_mask)
+        range_mask = ~(upper_mask | lower_mask | mid_mask)
+        
         # If the upper barrier is crossed
-        if performance > self.upper_barrier:
-            payoff =  100 + self.rebate  # Fixed refund
+        payoff[upper_mask] = 100.0 + self.rebate
         # If the lower barrier is crossed
-        elif performance < self.lower_barrier:
-            # Loss similar to a Put Down-and-In
-            loss = self.leverage  * (performance - 100)
-            payoff = loss + 100  # Loss
-        elif performance < 100:
-            payoff =  100
-        else:
-            # Participation within the range defined by the barriers
-            payoff = self.leverage * (performance - 100) + 100
+        payoff[lower_mask] = 100.0 + self.leverage * (performance[lower_mask] - 100.0)
+        # performance < 100 (but >= lower_barrier)
+        payoff[mid_mask] = 100.0
+        # Participation within the range defined by the barriers
+        payoff[range_mask] = self.leverage * (performance[range_mask] - 100.0) + 100.0
 
         return payoff
 

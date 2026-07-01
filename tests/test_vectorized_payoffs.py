@@ -323,3 +323,54 @@ class TestPathDependentOptions:
         
         expected_payoffs = np.maximum(0.0, S_t1 - S_T) * MARKET.get_discount_factor(1.0)
         np.testing.assert_allclose(payoffs, expected_payoffs, atol=1e-8)
+
+# ===========================================================================
+# Structured Participation Products
+# ===========================================================================
+class TestParticipationProductsVectorization:
+    def test_twinwin_vectorized(self):
+        from kernel.products.structured_products.participation_products import TwinWin
+        twinwin = TwinWin(maturity=1.0, upper_barrier=120.0, lower_barrier=80.0, rebate=5.0, leverage=2.0)
+        twinwin.initial_spot = 100.0
+
+        # Create specific paths to hit all conditions:
+        # 1. Upper barrier crossed (>120): e.g. 130
+        # 2. Lower barrier crossed (<80): e.g. 70
+        # 3. In range (80-120): e.g. 110
+        paths = np.ones((3, 2)) * 100.0
+        paths[0, -1] = 130.0  # Path 0: > upper
+        paths[1, -1] = 70.0   # Path 1: < lower
+        paths[2, -1] = 110.0  # Path 2: in range
+
+        payoffs = twinwin.get_discounted_payoff(paths, MARKET)
+        df = MARKET.get_discount_factor(1.0)
+        raw_payoffs = payoffs / df
+
+        assert np.isclose(raw_payoffs[0], 100.0 + 5.0)  # rebate
+        assert np.isclose(raw_payoffs[1], 100.0 + 2.0 * (70.0 - 100.0))  # lower loss
+        assert np.isclose(raw_payoffs[2], 2.0 * abs(110.0 - 100.0) + 100.0)  # participation
+
+    def test_airbag_vectorized(self):
+        from kernel.products.structured_products.participation_products import Airbag
+        airbag = Airbag(maturity=1.0, upper_barrier=130.0, lower_barrier=80.0, rebate=10.0, leverage=1.5)
+        airbag.initial_spot = 100.0
+
+        # Create specific paths to hit all conditions:
+        # 1. Upper crossed (>130) -> e.g. 140
+        # 2. Lower crossed (<80) -> e.g. 70
+        # 3. mid (80 <= x < 100) -> e.g. 90
+        # 4. range (100 <= x <= 130) -> e.g. 120
+        paths = np.ones((4, 2)) * 100.0
+        paths[0, -1] = 140.0
+        paths[1, -1] = 70.0
+        paths[2, -1] = 90.0
+        paths[3, -1] = 120.0
+
+        payoffs = airbag.get_discounted_payoff(paths, MARKET)
+        df = MARKET.get_discount_factor(1.0)
+        raw_payoffs = payoffs / df
+
+        assert np.isclose(raw_payoffs[0], 100.0 + 10.0)
+        assert np.isclose(raw_payoffs[1], 100.0 + 1.5 * (70.0 - 100.0))
+        assert np.isclose(raw_payoffs[2], 100.0)
+        assert np.isclose(raw_payoffs[3], 1.5 * (120.0 - 100.0) + 100.0)
