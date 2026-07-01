@@ -50,7 +50,7 @@ class CallableMCPricingEngine(MCPricingEngine):
             # Fallback to the base optimized MC engine pricing
             return super().get_result(derivative)
 
-    def get_coupon(self, derivative: 'CallableProduct', process: StochasticProcess, epsilon: float = 1e-2, max_iter: int = 25, target_price: float = 100) -> float: # type: ignore
+    def get_coupon(self, derivative: 'CallableProduct', process: StochasticProcess, epsilon: float = 1e-2, max_iter: int = 25, target_price: float = 100, method: str = "analytical") -> float: # type: ignore
         """Computes the coupon of the structured product such that the price equals the target price (e.g., initial capital).
 
         Parameters:
@@ -59,6 +59,7 @@ class CallableMCPricingEngine(MCPricingEngine):
             epsilon (float): The tolerance for the price difference.
             max_iter (int): The maximum number of iterations for the dichotomy method.
             target_price (float): The target price.
+            method (str): "analytical" (fast linear solver) or "bisection" (iterative).
 
         Returns:
             float: The computed coupon.
@@ -68,6 +69,26 @@ class CallableMCPricingEngine(MCPricingEngine):
         scheme = EulerScheme()
         pre_simulated_paths = scheme.simulate_paths(process, self.nb_paths, self.random_seed)
 
+        if method == "analytical":
+            # 1. Price with coupon = 0
+            derivative.coupon_rate = 0.0
+            p0 = self._get_price(derivative, process, current_market=self.market, pre_simulated_paths=pre_simulated_paths)
+            
+            # 2. Price with coupon = 1.0 (1%)
+            derivative.coupon_rate = 1.0
+            p1 = self._get_price(derivative, process, current_market=self.market, pre_simulated_paths=pre_simulated_paths)
+            
+            # 3. Compute delta price per 1% coupon (the slope)
+            dp_dc = p1 - p0
+            
+            # 4. Solve for target coupon
+            # p0 + c * dp_dc = target_price => c = (target_price - p0) / dp_dc
+            if abs(dp_dc) < 1e-12:
+                return 0.0  # Avoid division by zero if coupon has no effect
+            
+            return float((target_price - p0) / dp_dc)
+
+        # Fallback: Bisection method
         # Define the bounds for the coupon (%)
         lower_bound = 0.0
         upper_bound = 50.0
