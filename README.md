@@ -1,6 +1,6 @@
-# 結構化商品定價引擎 (Structured Products Pricing Engine)
+# 衍生性商品定價引擎 (Derivatives Pricing Engine)
 
-這是一個基於 Python 的定價引擎，支援蒙地卡羅模擬 (Monte Carlo Simulation)、多種隨機過程模型 (Black-Scholes, Heston) 以及多種波動度曲面 (SVI, SSVI, Local Volatility)。本引擎主要用於為各類衍生性金融商品（如香草選擇權 Vanilla Options、障礙選擇權 Barrier Options、以及複雜的結構型商品如 Autocall Phoenix / Eagle）進行定價，並計算相關的風險指標 (Greeks)。
+這是一個基於 Python 的全功能定價引擎，支援蒙地卡羅模擬 (Monte Carlo Simulation)、多種隨機過程模型 (Black-Scholes, Heston) 以及多種波動度曲面 (SVI, SSVI, Local Volatility)。本引擎涵蓋廣泛的衍生性金融商品，包含香草選擇權 (Vanilla Options)、障礙選擇權 (Barrier Options)、路徑相關選擇權 (Path-Dependent Options)、美式/百慕大選擇權 (American / Bermudan Options)、選擇權策略 (Option Strategies)、結構型商品 (Structured Products，如 Autocall Phoenix / Eagle) 及利率商品 (Rate Products，如債券 Bond 與利率交換 Swap)，並計算相關的風險指標 (Greeks)。
 
 此文件旨在為 Web 開發者、後端工程師及 DevOps 團隊提供**清晰的整合指南與輸出規格**，讓您可以獨立將此定價引擎與現有的系統 (API / Web App) 結合，而無須深入理解底層的財務數學。
 
@@ -159,7 +159,7 @@ print(f"理論價格: {result.price}")  # e.g. 102.35
 ```
 
 ### 模式 B：求解配息率模式 (Solving Mode)
-給定目標價格 (預設 100) → 反推隱含配息率。引擎使用**二分搜尋法 (Bisection)**，在預模擬的路徑上迭代，最多 25 次，容差 1e-2。
+給定目標價格 (預設 100) → 反推隱含配息率。引擎預設使用**解析法 (Analytical)**：以兩個不同配息率試算價格後線性插值，僅需 2 次模擬（速度最快）。若插值誤差過大，可改用**二分搜尋法 (Bisection)**，在預模擬路徑上迭代最多 25 次，容差 1e-2。
 
 ```python
 settings.pricing_engine_type = PricingEngineType.CALLABLE_MC
@@ -173,7 +173,7 @@ print(f"隱含配息率: {result.coupon_callable}%")  # e.g. 7.82%
 ```
 
 > [!TIP]
-> 求解模式只需 **一次路徑模擬**，後續 25 次迭代複用同一批路徑，因此效能與單次定價相近。Web 端可將 `coupon_rate` 初始設為 `0.0`。
+> 求解模式只需 **一次路徑模擬**（解析法）或複用同一批路徑（二分法），效能與單次定價相近。Web 端可將 `coupon_rate` 初始設為 `0.0`。
 
 ---
 
@@ -189,6 +189,20 @@ print(f"隱含配息率: {result.coupon_callable}%")  # e.g. 7.82%
 | `greeks` | `Dict[str, float]` | 僅在 `compute_greeks = True` 時有值。Keys: `"delta"`, `"gamma"`, `"vega"`, `"theta"`, `"rho"`。 |
 | `coupon_callable` | `float` 或 `None` | 僅在 `compute_callable_coupons = True` 且引擎為 `CALLABLE_MC` 時有值。 |
 | `rate` | `float` 或 `None` | 僅在 `RATE` 引擎下有值。債券 → YTM (到期殖利率)、交換 → Par Swap Rate。 |
+| `std_dev` | `float` 或 `None` | MC 引擎下提供蒙地卡羅標準誤差，用於信賴區間計算。`RATE` 引擎下為 `None`。 |
+| `lower_bound` *(property)* | `float` 或 `None` | 95% 信賴區間下界：`price - 1.96 × std_dev`。需要 `price` 與 `std_dev` 均有值。 |
+| `upper_bound` *(property)* | `float` 或 `None` | 95% 信賴區間上界：`price + 1.96 × std_dev`。需要 `price` 與 `std_dev` 均有值。 |
+
+### 聚合多商品結果 (Aggregating Multiple Results)
+
+處理選擇權策略或多腿組合時，可用 `get_aggregated_results()` 靜態方法將多個 `PricingResults` 的價格與 Greeks 加總：
+
+```python
+results_list = [launcher.calculate(leg) for leg in strategy_legs]
+combined = PricingResults.get_aggregated_results(results_list)
+print(combined.price)   # 總策略價值
+print(combined.greeks)  # 各 Greek 加總
+```
 
 ### JSON 回傳範例
 
@@ -221,7 +235,9 @@ print(f"隱含配息率: {result.coupon_callable}%")  # e.g. 7.82%
 from kernel.tools import ObservationFrequency, Model, CalendarConvention, RateCurveType
 from kernel.models.pricing_engines.enum_pricing_engine import PricingEngineType
 from kernel.products.structured_products.autocall_products import Phoenix
-from kernel.market_data import Market, VolatilitySurfaceType
+from kernel.market_data.market import Market
+from kernel.market_data.data_loader import MarketDataLoader
+from kernel.market_data.volatility_surface.enums_volatility import VolatilitySurfaceType
 from kernel.market_data.rate_curve_data.enums_interpolators import InterpolationType
 from utils.pricing_settings import PricingSettings
 from kernel.pricing_launcher import PricingLauncher
@@ -239,11 +255,19 @@ settings.compute_callable_coupons = True
 settings.nb_paths = 50000
 settings.nb_steps = 250
 
+data_loader = MarketDataLoader()
+underlying_df = data_loader.get_underlying_info(settings.underlying_name)
+options_df    = data_loader.get_option_data(settings.underlying_name)
+yield_df      = data_loader.get_yield_curve(settings.rate_curve_type.value)
+
 market = Market(
     underlying_name=settings.underlying_name,
+    yield_curve_data=yield_df,
+    underlying_data=underlying_df,
+    option_data=options_df,
     rate_curve_type=settings.rate_curve_type,
     interpolation_type=settings.interpolation_type,
-    volatility_surface_type=VolatilitySurfaceType.SVI,
+    volatility_surface_type=settings.volatility_surface_type,
     calendar_convention=settings.day_count_convention,
     obs_frequency=settings.obs_frequency
 )
@@ -261,6 +285,7 @@ print(f"隱含配息率 (Implied Coupon): {result.coupon_callable}%")
 ```python
 from kernel.products.structured_products.autocall_products import Eagle
 
+# 承接範例 1 的 market / settings 物件
 settings.pricing_engine_type = PricingEngineType.MC
 settings.compute_callable_coupons = False
 launcher = PricingLauncher(pricing_settings=settings, market=market)
@@ -342,6 +367,29 @@ product = CouponBond(
 result = launcher.calculate(product)
 print(f"債券現值: {result.price}")
 print(f"到期殖利率 (YTM): {result.rate}")
+```
+
+### 範例 7：Heston 隨機波動度模型 — 路徑相關選擇權比較 (MC)
+
+將 `settings.model` 切換為 `Model.HESTON`，引擎自動從市場波動度曲面校準 Heston 參數（κ, θ, σ, ρ）。其餘設定與 BS 相同，適合需要比較 BS vs Heston 定價差異的場景。
+
+```python
+from kernel.tools import Model
+from kernel.products.options.path_dependent_options import AsianCallOption, LookbackPutOption
+
+# 承接前述 market / settings 物件
+settings.pricing_engine_type = PricingEngineType.MC
+settings.compute_greeks = True
+
+spot = market.underlying_asset.last_price
+
+for model in [Model.BLACK_SCHOLES, Model.HESTON]:
+    settings.model = model
+    launcher = PricingLauncher(pricing_settings=settings, market=market)
+
+    asian = AsianCallOption(strike=spot, maturity=1.0)
+    result = launcher.calculate(asian)
+    print(f"[{model.name}] Asian Call: {result.price:.4f}  Delta: {result.greeks.get('delta', 0):.4f}")
 ```
 
 ---
