@@ -1,10 +1,11 @@
 import numpy as np
 from ..stochastic_processes.stochastic_process import StochasticProcess,OneFactorStochasticProcess,TwoFactorStochasticProcess
+from .simulation_result import SimulationResult
 
 class EulerScheme:
     """Euler-Maruyama discretization scheme for simulating stochastic processes."""
     
-    def simulate_paths(self, process: StochasticProcess, nb_paths: int, seed: int = 4012) -> np.ndarray:
+    def simulate_paths(self, process: StochasticProcess, nb_paths: int, seed: int = 4012) -> SimulationResult:
         """Simulate paths for a given stochastic process using the Euler scheme.
 
         Args:
@@ -25,7 +26,7 @@ class EulerScheme:
         else:
             raise NotImplementedError("Only OneFactor or TwoFactor processes are supported.")
 
-    def _simulate_one_factor(self, process: OneFactorStochasticProcess, nb_paths: int, seed: int) -> np.ndarray:
+    def _simulate_one_factor(self, process: OneFactorStochasticProcess, nb_paths: int, seed: int) -> SimulationResult:
         """Simulate paths for a one-factor stochastic process.
 
         Args:
@@ -34,7 +35,7 @@ class EulerScheme:
             seed: Seed for the random number generator.
 
         Returns:
-            A 2D array of shape (nb_paths, nb_steps + 1) containing the simulated paths.
+            A SimulationResult containing a 2D array of shape (nb_paths, nb_steps + 1) with the simulated paths.
         """
         paths = np.zeros((nb_paths, process.nb_steps + 1))
 
@@ -60,9 +61,9 @@ class EulerScheme:
             else:
                 # Raw Euler for normal-distributed processes
                 paths[:, i + 1] = x + drift * dt + vol * dW_i
-        return paths
+        return SimulationResult(spot_paths=paths)
 
-    def _simulate_two_factor(self, process: TwoFactorStochasticProcess, nb_paths: int, seed: int) -> np.ndarray:
+    def _simulate_two_factor(self, process: TwoFactorStochasticProcess, nb_paths: int, seed: int) -> SimulationResult:
         """Simulate paths for a two-factor stochastic process (e.g., Heston).
 
         Args:
@@ -71,7 +72,7 @@ class EulerScheme:
             seed: Seed for the random number generator.
 
         Returns:
-            A 2D array of shape (nb_paths, nb_steps + 1) containing the primary asset paths.
+            A SimulationResult containing the primary asset paths and variance paths.
         """
         paths = np.zeros((nb_paths, process.nb_steps + 1, 2))
         paths[:, 0, 0] = process.S0
@@ -106,4 +107,4 @@ class EulerScheme:
             paths[:, i + 1, 0] = x_next
             paths[:, i + 1, 1] = v_next
 
-        return paths[:, :, 0] 
+        return SimulationResult(spot_paths=paths[:, :, 0], variance_paths=paths[:, :, 1])

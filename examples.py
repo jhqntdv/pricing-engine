@@ -85,8 +85,8 @@ def main():
     ]
     
     structured_products = [
-        ("Phoenix Autocall", Phoenix(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_barrier=0.8, coupon_rate=0.08)),
-        ("Eagle Autocall", Eagle(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_rate=0.08)),
+        ("Phoenix Autocall", Phoenix(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=70.0, autocall_barrier=100.0, coupon_barrier=80.0, coupon_rate=8.0)),
+        ("Eagle Autocall", Eagle(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=70.0, autocall_barrier=100.0, coupon_rate=8.0)),
     ]
 
     results_list = []
@@ -123,26 +123,27 @@ def main():
 
     total_t0 = time.time()
     
-    # Run European under Black-Scholes
+    # Run European under Black-Scholes and Heston
     run_batch(european_products, PricingEngineType.MC, Model.BLACK_SCHOLES)
+    run_batch(european_products, PricingEngineType.MC, Model.HESTON)
     
     # Run Path Dependent under Black-Scholes and Heston
     run_batch(path_dependent_products, PricingEngineType.MC, Model.BLACK_SCHOLES)
     run_batch(path_dependent_products, PricingEngineType.MC, Model.HESTON)
     
-    # Run Early Exercise under Black-Scholes
+    # Run Early Exercise under Black-Scholes and Heston
     run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.BLACK_SCHOLES)
+    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.HESTON)
     
-    # Run Structured Products under Black-Scholes
+    # Run Structured Products under Black-Scholes and Heston
     run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.BLACK_SCHOLES)
+    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.HESTON)
 
     df = pd.DataFrame(results_list)
     
-    # 1. Side-by-side table for Path-Dependent Products (BS vs Heston)
-    path_dep_df = df[df['Product'].isin([p[0] for p in path_dependent_products])]
-    
+    # Side-by-side table for ALL Products (BS vs Heston)
     # Pivot to get models side-by-side
-    pivot_df = path_dep_df.pivot(index='Product', columns='Model', values=['Price', 'Time(s)', 'StdDev', 'Delta', 'Gamma', 'Vega'])
+    pivot_df = df.pivot(index='Product', columns='Model', values=['Price', 'Time(s)', 'StdDev', 'Delta', 'Gamma', 'Vega'])
     
     # Flatten columns: 'Price' 'BLACK_SCHOLES' -> 'Price (BS)'
     new_cols = []
@@ -152,18 +153,15 @@ def main():
     pivot_df.columns = new_cols
     pivot_df = pivot_df.reset_index()
     
+    # Reorder the rows to match the order they were defined (since pivot sorts alphabetically)
+    product_order = [p[0] for p in european_products + path_dependent_products + american_products + structured_products]
+    pivot_df['Product'] = pd.Categorical(pivot_df['Product'], categories=product_order, ordered=True)
+    pivot_df = pivot_df.sort_values('Product')
+    
     print("=" * 120)
-    print("PATH-DEPENDENT OPTIONS: BLACK-SCHOLES vs HESTON (Side-by-Side Comparison)")
+    print("ALL PRODUCTS: BLACK-SCHOLES vs HESTON (Side-by-Side Comparison)")
     print("=" * 120)
     print(pivot_df.set_index('Product').T.to_string())
-    
-    # 2. Table for products that only ran on Black-Scholes
-    other_df = df[~df['Product'].isin([p[0] for p in path_dependent_products])]
-    if not other_df.empty:
-        print("\n" + "=" * 120)
-        print("EUROPEAN, EXOTIC & STRUCTURED PRODUCTS (BLACK-SCHOLES ONLY)")
-        print("=" * 120)
-        print(other_df.drop(columns=['Model']).set_index('Product').T.to_string())
     
     print(f"\nTotal Pricing Time (excluding market init): {time.time() - total_t0:.4f} seconds")
 

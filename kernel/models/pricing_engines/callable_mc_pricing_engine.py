@@ -67,7 +67,8 @@ class CallableMCPricingEngine(MCPricingEngine):
         # Pre-simulate paths once to avoid re-simulating inside the root-finding loop.
         # This drastically improves performance and eliminates Monte Carlo noise between iterations.
         scheme = EulerScheme()
-        pre_simulated_paths = scheme.simulate_paths(process, self.nb_paths, self.random_seed)
+        sim_result = scheme.simulate_paths(process, self.nb_paths, self.random_seed)
+        pre_simulated_paths = sim_result.spot_paths
 
         if method == "analytical":
             # 1. Price with coupon = 0

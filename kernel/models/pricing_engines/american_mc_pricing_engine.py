@@ -41,7 +41,7 @@ class AmericanMCPricingEngine(MCPricingEngine):
             derivative: The American option to evaluate.
             stochastic_process: The simulated stochastic process.
             current_market: Overridden market data for simulations.
-            pre_simulated_paths: Optional paths to use directly.
+            pre_simulated_paths: Optional paths to use directly. Accepts a raw np.ndarray or a SimulationResult.
             return_std: Whether to return the standard deviation.
 
         Returns:
@@ -51,10 +51,13 @@ class AmericanMCPricingEngine(MCPricingEngine):
             raise ValueError("current_market must be explicitly provided to ensure drift and discounting share the same curve.")
         
         if pre_simulated_paths is not None:
-            paths = pre_simulated_paths
+            paths = getattr(pre_simulated_paths, "spot_paths", pre_simulated_paths)
+            var_paths = getattr(pre_simulated_paths, "variance_paths", None)
         else:
             scheme = EulerScheme()
-            paths = scheme.simulate_paths(process=stochastic_process, nb_paths=self.nb_paths, seed=self.random_seed)
+            sim_result = scheme.simulate_paths(process=stochastic_process, nb_paths=self.nb_paths, seed=self.random_seed)
+            paths = sim_result.spot_paths
+            var_paths = sim_result.variance_paths
 
 
         dt = derivative.maturity / self.nb_steps
@@ -80,14 +83,17 @@ class AmericanMCPricingEngine(MCPricingEngine):
                 if np.any(in_money):
                     paths_in_money = paths[in_money, t]
                     normalized = paths_in_money / normalizer
-                    x_matrix = np.column_stack([
-                        np.ones(np.sum(in_money)),
-                        normalized,
-                        normalized ** 2
-                    ])
+                    basis = [np.ones(np.sum(in_money)), normalized, normalized ** 2]
+                    
+                    if var_paths is not None:
+                        v_ref = getattr(stochastic_process, "theta", None) or getattr(stochastic_process, "v0", 1.0)
+                        v_in = var_paths[in_money, t] / v_ref
+                        basis += [v_in, v_in ** 2, normalized * v_in]
+
+                    x_matrix = np.column_stack(basis)
                     y_vector = cashflow[in_money]
                     coeff, _, _, _ = np.linalg.lstsq(x_matrix, y_vector, rcond=None)
-                    cont_val = coeff[0] + coeff[1] * normalized + coeff[2] * (normalized ** 2)
+                    cont_val = x_matrix @ coeff
                     exercise = immediate[in_money] >= cont_val
                     cashflow[in_money] = np.where(exercise, immediate[in_money], cashflow[in_money])
 

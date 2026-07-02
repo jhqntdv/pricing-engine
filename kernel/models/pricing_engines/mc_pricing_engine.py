@@ -166,6 +166,11 @@ class MCPricingEngine(AbstractPricingEngine):
             # Prioritize the initial variance defined by the model, otherwise fallback to the square of market volatility.
             v0 = getattr(self.model, "v0", volatility**2)
             
+            # Feller condition sanity check: 2 * kappa * theta > sigma^2 keeps variance positive
+            # Current default params (kappa=8.14, theta=0.07, sigma=0.39): 2*8.14*0.07 = 1.13 > 0.15 (Satisfied)
+            # if 2 * kappa * theta <= sigma**2:
+            #     logging.warning("Feller condition violated! Variance path may frequently hit zero.")
+            
             return HestonProcess(S0=initial_value, v0=v0, T=T, nb_steps=self.nb_steps, 
                                  drift=drift, kappa=kappa, theta=theta, sigma=sigma, rho=rho, random_generator=generator)
         else:
@@ -178,7 +183,7 @@ class MCPricingEngine(AbstractPricingEngine):
             derivative: The derivative to evaluate.
             stochastic_process: The simulated process.
             current_market: Overridden market data for simulations.
-            pre_simulated_paths: Optional paths to use directly.
+            pre_simulated_paths: Optional paths to use directly. Accepts a raw np.ndarray or a SimulationResult.
             return_std: Whether to return the standard deviation.
 
         Returns:
@@ -188,10 +193,11 @@ class MCPricingEngine(AbstractPricingEngine):
             raise ValueError("current_market must be explicitly provided to ensure drift and discounting share the same curve.")
             
         if pre_simulated_paths is not None:
-            price_paths = pre_simulated_paths
+            price_paths = getattr(pre_simulated_paths, "spot_paths", pre_simulated_paths)
         else:
             scheme = EulerScheme()
-            price_paths = scheme.simulate_paths(process=stochastic_process, nb_paths=self.nb_paths, seed=self.random_seed)
+            sim_result = scheme.simulate_paths(process=stochastic_process, nb_paths=self.nb_paths, seed=self.random_seed)
+            price_paths = sim_result.spot_paths
             
         # Vectorized payoff evaluation: derivative.get_discounted_payoff now accepts
         # the full (nb_paths, nb_steps+1) matrix and returns a (nb_paths,) array,
@@ -304,12 +310,15 @@ class MCPricingEngine(AbstractPricingEngine):
             # 1. Simulate base paths once with the SAME seed used for `price`.
             process = self.get_stochastic_process(derivative, market)
             scheme = EulerScheme()
-            base_paths = scheme.simulate_paths(process, self.nb_paths, self.random_seed)
-
+            base_sim_result = scheme.simulate_paths(process, self.nb_paths, self.random_seed)
+    
             # 2. Drop the last time column: the first (nb_steps) columns ARE the
             #    process over [0, tau - dt] at fixed S0 with identical increments.
             #    This is CRN by construction — zero re-simulation, zero dt mismatch.
-            bumped_paths = base_paths[:, :-1]
+            bumped_spot = base_sim_result.spot_paths[:, :-1]
+            bumped_var = base_sim_result.variance_paths[:, :-1] if base_sim_result.variance_paths is not None else None
+            from kernel.models.discretization_schemes.simulation_result import SimulationResult
+            bumped_paths = SimulationResult(spot_paths=bumped_spot, variance_paths=bumped_var)
 
             # 3. Re-price with time-to-maturity reduced by exactly one grid step.
             deriv_bumped = copy.deepcopy(derivative)

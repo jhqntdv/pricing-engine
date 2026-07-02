@@ -92,7 +92,8 @@ class TestEulerScheme(unittest.TestCase):
             drift=self.drift, 
             volatility=0.2
         )
-        paths = self.scheme.simulate_paths(process, self.nb_paths)
+        res = self.scheme.simulate_paths(process, self.nb_paths)
+        paths = res.spot_paths
         
         # Shape should be (nb_paths, nb_steps + 1)
         self.assertEqual(paths.shape, (self.nb_paths, self.nb_steps + 1))
@@ -115,7 +116,8 @@ class TestEulerScheme(unittest.TestCase):
             sigma=0.3, 
             rho=-0.5
         )
-        paths = self.scheme.simulate_paths(process, self.nb_paths)
+        res = self.scheme.simulate_paths(process, self.nb_paths)
+        paths = res.spot_paths
         
         # Shape for two-factor (spot price is returned, variance is internal)
         # The EulerScheme implementation returns paths[:, :, 0] meaning just spot
@@ -138,7 +140,8 @@ class TestEulerScheme(unittest.TestCase):
             drift=list_drift, 
             volatility=0.2
         )
-        paths = self.scheme.simulate_paths(process, self.nb_paths)
+        res = self.scheme.simulate_paths(process, self.nb_paths)
+        paths = res.spot_paths
         self.assertEqual(paths.shape, (self.nb_paths, self.nb_steps + 1))
         
         # Verify get_random_increments typing output correctly matches Union logic

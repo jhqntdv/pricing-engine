@@ -12,7 +12,7 @@ def test_log_euler_exact_distribution():
 
     process = BlackScholesProcess(S0=S0, T=T, nb_steps=1, drift=np.array([r]), volatility=sigma)
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(process, nb_paths, seed=42)
+    paths = scheme.simulate_paths(process, nb_paths, seed=42).spot_paths
 
     log_ST = np.log(paths[:, -1])
     expected_mean = np.log(S0) + (r - 0.5 * sigma**2) * T
@@ -26,7 +26,7 @@ def test_no_negative_prices_extreme_vol():
     """Even with 200% vol and dt=1.0, all paths must remain strictly positive."""
     process = BlackScholesProcess(S0=100.0, T=1.0, nb_steps=1, drift=np.array([0.0]), volatility=2.0)
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(process, nb_paths=100_000, seed=42)
+    paths = scheme.simulate_paths(process, nb_paths=100_000, seed=42).spot_paths
 
     assert np.all(paths > 0), f"Found {np.sum(paths <= 0)} non-positive prices"
 
@@ -39,7 +39,7 @@ def test_step_size_invariance():
     for steps in [1, 10, 50, 252]:
         process = BlackScholesProcess(S0=S0, T=T, nb_steps=steps, drift=np.array([r]*steps), volatility=sigma)
         scheme = EulerScheme()
-        paths = scheme.simulate_paths(process, nb_paths=200_000, seed=42)
+        paths = scheme.simulate_paths(process, nb_paths=200_000, seed=42).spot_paths
         payoffs = np.maximum(paths[:, -1] - K, 0) * np.exp(-r * T)
         prices.append(np.mean(payoffs))
 
@@ -53,7 +53,7 @@ def test_risk_neutral_martingale_bs():
     nb_paths = 500_000
     process = BlackScholesProcess(S0=S0, T=T, nb_steps=50, drift=np.array([r]*50), volatility=sigma)
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(process, nb_paths, seed=42)
+    paths = scheme.simulate_paths(process, nb_paths, seed=42).spot_paths
     ST = paths[:, -1]
 
     expected = S0 * np.exp(r * T)
@@ -70,7 +70,7 @@ def test_risk_neutral_martingale_heston():
     process = HestonProcess(S0=S0, v0=0.04, T=T, nb_steps=250, drift=np.array([r]*250),
                             kappa=2.0, theta=0.04, sigma=0.3, rho=-0.5)
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(process, nb_paths, seed=42)
+    paths = scheme.simulate_paths(process, nb_paths, seed=42).spot_paths
     ST = paths[:, -1]
     expected = S0 * np.exp(r * T)
     se = np.std(ST, ddof=1) / np.sqrt(nb_paths)
@@ -84,7 +84,7 @@ def test_put_call_parity_log_euler():
     nb_paths = 200_000
     process = BlackScholesProcess(S0=S0, T=T, nb_steps=50, drift=np.array([r]*50), volatility=sigma)
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(process, nb_paths, seed=42)
+    paths = scheme.simulate_paths(process, nb_paths, seed=42).spot_paths
     ST = paths[:, -1]
     df = np.exp(-r * T)
     call = np.mean(np.maximum(ST - K, 0)) * df
@@ -100,7 +100,7 @@ def test_heston_degenerates_to_bs():
     heston = HestonProcess(S0=S0, v0=v0, T=T, nb_steps=100, drift=np.array([r]*100),
                            kappa=2.0, theta=v0, sigma=0.0, rho=0.0)   # sigma(vol-of-vol)=0, v0=theta
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(heston, nb_paths, seed=42)
+    paths = scheme.simulate_paths(heston, nb_paths, seed=42).spot_paths
     price_heston = np.mean(np.maximum(paths[:, -1] - K, 0)) * np.exp(-r * T)
 
     # Black-Scholes closed form with sigma = sqrt(v0)
@@ -117,6 +117,6 @@ def test_raw_euler_fallback_when_not_log_process():
     process = BlackScholesProcess(S0=100.0, T=1.0, nb_steps=1, drift=np.array([0.0]), volatility=2.0)
     process.is_log_process = False          # force the fallback branch
     scheme = EulerScheme()
-    paths = scheme.simulate_paths(process, nb_paths=100_000, seed=42)
+    paths = scheme.simulate_paths(process, nb_paths=100_000, seed=42).spot_paths
     # Raw Euler with 200% vol and dt=1.0 is expected to breach zero — proving the branch is live.
     assert np.any(paths <= 0), "Fallback branch did not behave like Raw Euler (expected some non-positive paths)"
