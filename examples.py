@@ -20,27 +20,7 @@ from kernel.products.rate.bond import ZeroCouponBond, CouponBond
 from kernel.products.rate.vanilla_swap import InterestRateSwap
 from datetime import datetime
 
-def print_result(name, result, t_elapsed):
-    print(f"> {name}")
-    print(f"  Time taken: {t_elapsed:.4f}s")
-    print(f"  Price:      {result.price:.4f}")
-    if result.std_dev is not None:
-        print(f"  Std Dev:    {result.std_dev:.4f}")
-        print(f"  95% CI:     [{result.lower_bound:.4f}, {result.upper_bound:.4f}]")
-    else:
-        print("  Std Dev:    N/A (Analytical / Deterministic)")
-        print("  95% CI:     N/A")
-    if result.greeks:
-        print(f"  Greeks:     {result.greeks}")
-    else:
-        print("  Greeks:     None")
-    
-    if hasattr(result, 'coupon_callable') and result.coupon_callable is not None:
-        print(f"  Coupon Call: {result.coupon_callable}")
-    
-    if hasattr(result, 'rate') and result.rate is not None:
-        print(f"  Rate:       {result.rate:.4f}")
-    print("-" * 60)
+import pandas as pd
 
 def main():
     print("=" * 60)
@@ -84,55 +64,107 @@ def main():
     
     launcher = PricingLauncher(pricing_settings=settings, market=market)
 
-    products = [
-        ("ENGINE: MC - Vanilla & Exotics", [
-            ("European Call", EuropeanCallOption(strike=spot, maturity=1.0)),
-            ("European Put", EuropeanPutOption(strike=spot*0.9, maturity=1.0)),
-            ("Down-And-In Call", DownAndInCallOption(strike=spot, maturity=1.0, barrier=spot*0.8)),
-            ("Up-And-Out Put", UpAndOutPutOption(strike=spot, maturity=1.0, barrier=spot*1.2)),
-            ("Cash-Or-Nothing Call", BinaryCallOption(strike=spot, maturity=1.0, coupon=100)),
-            ("Asian Call", AsianCallOption(strike=spot, maturity=1.0)),
-            ("Lookback Put", LookbackPutOption(strike=spot, maturity=1.0)),
-            ("Straddle", Straddle(strike=spot, maturity=1.0, position_call=True, position_put=True)),
-            ("Bull Spread", BullSpread(maturity=1.0, strike_low=spot*0.9, strike_high=spot*1.1, position_low=True, position_high=False)),
-        ]),
-        ("ENGINE: AMERICAN_MC - Early Exercise", [
-            ("American Call", AmericanCallOption(strike=spot, maturity=1.0)),
-            ("Bermudan Put", BermudanPutOption(strike=spot, maturity=1.0, exercise_times=[0.25, 0.5, 0.75, 1.0])),
-        ]),
-        ("ENGINE: CALLABLE_MC - Structured Products", [
-            ("Phoenix Autocall", Phoenix(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_barrier=0.8, coupon_rate=0.08)),
-            ("Eagle Autocall", Eagle(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_rate=0.08)),
-        ]),
-        ("ENGINE: RATE - Fixed Income", [
-            ("Zero Coupon Bond (1Y)", ZeroCouponBond(notional=100.0, issue_date=datetime.now(), maturity=datetime.now().replace(year=datetime.now().year + 1), calendar_convention=CalendarConvention.ACT_360, ytm=0.03)),
-            ("Coupon Bond (5Y)", CouponBond(notional=100.0, issue_date=datetime.now(), maturity=datetime.now().replace(year=datetime.now().year + 5), coupon_rate=0.04, frequency=2, calendar_convention=CalendarConvention.ACT_360, ytm=0.03)),
-            ("Interest Rate Swap (2Y)", InterestRateSwap(notional=10000.0, issue_date=datetime.now(), maturity=datetime.now().replace(year=datetime.now().year + 2), calendar_convention=CalendarConvention.ACT_360, fixed_rate=0.03, frequency=2)),
-        ])
+    european_products = [
+        ("European Call", EuropeanCallOption(strike=spot, maturity=1.0)),
+        ("European Put", EuropeanPutOption(strike=spot*0.9, maturity=1.0)),
+        ("Cash-Or-Nothing Call", BinaryCallOption(strike=spot, maturity=1.0, coupon=100)),
+        ("Straddle", Straddle(strike=spot, maturity=1.0, position_call=True, position_put=True)),
+        ("Bull Spread", BullSpread(maturity=1.0, strike_low=spot*0.9, strike_high=spot*1.1, position_low=True, position_high=False)),
+    ]
+    
+    path_dependent_products = [
+        ("Down-And-In Call", DownAndInCallOption(strike=spot, maturity=1.0, barrier=spot*0.8)),
+        ("Up-And-Out Put", UpAndOutPutOption(strike=spot, maturity=1.0, barrier=spot*1.2)),
+        ("Asian Call", AsianCallOption(strike=spot, maturity=1.0)),
+        ("Lookback Put", LookbackPutOption(strike=spot, maturity=1.0)),
+    ]
+    
+    american_products = [
+        ("American Call", AmericanCallOption(strike=spot, maturity=1.0)),
+        ("Bermudan Put", BermudanPutOption(strike=spot, maturity=1.0, exercise_times=[0.25, 0.5, 0.75, 1.0])),
+    ]
+    
+    structured_products = [
+        ("Phoenix Autocall", Phoenix(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_barrier=0.8, coupon_rate=0.08)),
+        ("Eagle Autocall", Eagle(maturity=3.0, observation_frequency=ObservationFrequency.SEMIANNUAL, capital_barrier=0.7, autocall_barrier=1.0, coupon_rate=0.08)),
     ]
 
-    total_t0 = time.time()
-    for category, items in products:
-        print("=" * 60)
-        print(category)
-        print("=" * 60)
-        
-        # Determine engine type from category name
-        if "MC - Vanilla" in category:
-            settings.pricing_engine_type = PricingEngineType.MC
-        elif "AMERICAN_MC" in category:
-            settings.pricing_engine_type = PricingEngineType.AMERICAN_MC
-        elif "CALLABLE_MC" in category:
-            settings.pricing_engine_type = PricingEngineType.CALLABLE_MC
-        elif "RATE" in category:
-            settings.pricing_engine_type = PricingEngineType.RATE
-            
-        for name, prod in items:
+    results_list = []
+    
+    def run_batch(products, engine_type, model_type):
+        settings.pricing_engine_type = engine_type
+        settings.model = model_type
+        for name, prod in products:
             start = time.time()
             res = launcher.calculate(prod)
             elapsed = time.time() - start
-            print_result(name, res, elapsed)
+            
+            row = {
+                "Product": name,
+                "Model": model_type.name,
+                "Price": f"{res.price:.4f}",
+                "Time(s)": f"{elapsed:.4f}",
+            }
+            if res.std_dev is not None:
+                row["StdDev"] = f"{res.std_dev:.4f}"
+            else:
+                row["StdDev"] = "N/A"
+                
+            if res.greeks:
+                row["Delta"] = f"{res.greeks.get('delta', 0):.4f}"
+                row["Gamma"] = f"{res.greeks.get('gamma', 0):.6f}"
+                row["Vega"] = f"{res.greeks.get('vega', 0):.4f}"
+            else:
+                row["Delta"] = "N/A"
+                row["Gamma"] = "N/A"
+                row["Vega"] = "N/A"
+                
+            results_list.append(row)
 
+    total_t0 = time.time()
+    
+    # Run European under Black-Scholes
+    run_batch(european_products, PricingEngineType.MC, Model.BLACK_SCHOLES)
+    
+    # Run Path Dependent under Black-Scholes and Heston
+    run_batch(path_dependent_products, PricingEngineType.MC, Model.BLACK_SCHOLES)
+    run_batch(path_dependent_products, PricingEngineType.MC, Model.HESTON)
+    
+    # Run Early Exercise under Black-Scholes
+    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.BLACK_SCHOLES)
+    
+    # Run Structured Products under Black-Scholes
+    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.BLACK_SCHOLES)
+
+    df = pd.DataFrame(results_list)
+    
+    # 1. Side-by-side table for Path-Dependent Products (BS vs Heston)
+    path_dep_df = df[df['Product'].isin([p[0] for p in path_dependent_products])]
+    
+    # Pivot to get models side-by-side
+    pivot_df = path_dep_df.pivot(index='Product', columns='Model', values=['Price', 'Time(s)', 'StdDev', 'Delta', 'Gamma', 'Vega'])
+    
+    # Flatten columns: 'Price' 'BLACK_SCHOLES' -> 'Price (BS)'
+    new_cols = []
+    for val_col, model_col in pivot_df.columns:
+        model_name = "BS" if model_col == "BLACK_SCHOLES" else "Heston"
+        new_cols.append(f"{val_col} ({model_name})")
+    pivot_df.columns = new_cols
+    pivot_df = pivot_df.reset_index()
+    
+    print("=" * 120)
+    print("PATH-DEPENDENT OPTIONS: BLACK-SCHOLES vs HESTON (Side-by-Side Comparison)")
+    print("=" * 120)
+    print(pivot_df.set_index('Product').T.to_string())
+    
+    # 2. Table for products that only ran on Black-Scholes
+    other_df = df[~df['Product'].isin([p[0] for p in path_dependent_products])]
+    if not other_df.empty:
+        print("\n" + "=" * 120)
+        print("EUROPEAN, EXOTIC & STRUCTURED PRODUCTS (BLACK-SCHOLES ONLY)")
+        print("=" * 120)
+        print(other_df.drop(columns=['Model']).set_index('Product').T.to_string())
+    
     print(f"\nTotal Pricing Time (excluding market init): {time.time() - total_t0:.4f} seconds")
 
 if __name__ == "__main__":

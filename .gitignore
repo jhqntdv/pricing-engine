@@ -76,3 +76,5 @@ venv.bak/
 task_plan.md
 scratch_test.py
 debug_market.py
+change_plan_euler_log_scheme.md
+change_plan_two_factor_euler.md
