@@ -251,3 +251,19 @@ class Market:
         bumped_market = copy.deepcopy(self)
         bumped_market._build_yield_curves(bumped_market._raw_yield_data, bump=bump)
         return bumped_market
+
+    def bump_flat_yield_curve_fast(self, bump: float) -> "Market":
+        """Create a new Market instance with a bumped flat yield curve.
+        Uses a shallow copy to reuse the already calibrated volatility surface.
+
+        Args:
+            bump: The absolute bump to apply to the yield curve rates.
+
+        Returns:
+            A new Market instance with the bumped yield curve.
+        """
+        if not hasattr(self, '_raw_yield_data'):
+            return self.bump_flat_yield_curve(bump)
+        bumped_market = copy.copy(self)
+        bumped_market._build_yield_curves(bumped_market._raw_yield_data, bump=bump)
+        return bumped_market

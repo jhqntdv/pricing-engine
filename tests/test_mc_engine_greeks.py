@@ -138,3 +138,37 @@ def test_finite_difference_vs_analytic():
     # wait, in mc_pricing_engine: vega = (price_up - price_down) / (2 * 0.01) which approximates dP/dSigma exactly.
     # bs_vega is dP/dSigma. Let's assert raw.
     assert np.isclose(mc_vega, bs_vega, rtol=0.02)
+
+def test_rho_unchanged_after_fast_bump():
+    """Verify rho computed with fast bump equals exactly the legacy deep-copy method (before)."""
+    S, K, T, r, sigma = 100.0, 100.0, 1.0, 0.05, 0.20
+    market = DummyMarket(spot=S, rate=r, vol=sigma)
+    settings = PricingSettings(nb_paths=10000, nb_steps=50, compute_greeks=True, random_seed=42)
+    settings.model = Model.BLACK_SCHOLES
+    engine = MCPricingEngine(market, settings)
+    call = EuropeanCallOption(maturity=T, strike=K)
+    
+    res = engine.get_result(call)
+    fast_rho = res.greeks["rho"]
+    
+    epsilon = 0.0001
+    epsilon_fit = epsilon * 100
+    market_up = market.bump_flat_yield_curve(epsilon_fit)
+    market_down = market.bump_flat_yield_curve(-epsilon_fit)
+    
+    process_up = engine.get_stochastic_process(call, market_up)
+    process_down = engine.get_stochastic_process(call, market_down)
+    
+    price_up = engine._get_price(call, process_up, market_up)
+    price_down = engine._get_price(call, process_down, market_down)
+    legacy_rho = (price_up - price_down) / (2 * epsilon)
+    
+    assert fast_rho == legacy_rho, f"Fast rho {fast_rho} != Legacy rho {legacy_rho}"
+
+@pytest.mark.skip(reason="Non-strict perf check")
+def test_rho_fast_is_faster():
+    import time
+    S, K, T, r, sigma = 100.0, 100.0, 1.0, 0.05, 0.20
+    market = DummyMarket(spot=S, rate=r, vol=sigma)
+    settings = PricingSettings(nb_paths=1000, nb_steps=10, compute_greeks=True, random_seed=42)
+    settings.model = Model.BLACK_SCHOLES

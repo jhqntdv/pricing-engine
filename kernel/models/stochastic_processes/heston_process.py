@@ -29,6 +29,11 @@ class HestonProcess(TwoFactorStochasticProcess):
         self.theta = theta
         self.sigma = sigma
         self.rho = rho
+        
+        # Feller condition guard
+        if 2 * self.kappa * self.theta <= self.sigma**2:
+            import warnings
+            warnings.warn("Feller condition violated (2*kappa*theta <= sigma^2). Variance may frequently hit zero.")
 
     def get_drift(self, t: int, x: np.ndarray) -> np.ndarray:
         """Drift of the spot price under the risk-neutral measure Q."""

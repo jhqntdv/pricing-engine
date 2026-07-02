@@ -8,6 +8,7 @@ from utils.pricing_results import PricingResults
 from kernel.models.discretization_schemes.euler_scheme import EulerScheme
 from .mc_pricing_engine import MCPricingEngine
 import numpy as np
+from typing import Union
 
 
 class AmericanMCPricingEngine(MCPricingEngine):
@@ -34,7 +35,7 @@ class AmericanMCPricingEngine(MCPricingEngine):
 
 
 
-    def _get_price(self, derivative: AmericanAbstractOption, stochastic_process: StochasticProcess, current_market: Market = None, pre_simulated_paths: np.ndarray = None, return_std: bool = False):
+    def _get_price(self, derivative: AmericanAbstractOption, stochastic_process: StochasticProcess, current_market: Market = None, pre_simulated_paths: Union[np.ndarray, "SimulationResult"] = None, return_std: bool = False):
         """Calculate the price of an American-style option using Longstaff-Schwartz.
 
         Args:
@@ -79,11 +80,13 @@ class AmericanMCPricingEngine(MCPricingEngine):
             if exercise_indices is None or t in exercise_indices: 
                 immediate = derivative.intrinsic_payoff(paths[:, t])
                 in_money = (immediate > 0)
+                n_itm = int(np.sum(in_money))
 
-                if np.any(in_money):
+                if n_itm > 0:
+                    imm_itm = immediate[in_money]
                     paths_in_money = paths[in_money, t]
                     normalized = paths_in_money / normalizer
-                    basis = [np.ones(np.sum(in_money)), normalized, normalized ** 2]
+                    basis = [np.ones(n_itm), normalized, normalized ** 2]
                     
                     if var_paths is not None:
                         v_ref = getattr(stochastic_process, "theta", None) or getattr(stochastic_process, "v0", 1.0)
@@ -94,8 +97,8 @@ class AmericanMCPricingEngine(MCPricingEngine):
                     y_vector = cashflow[in_money]
                     coeff, _, _, _ = np.linalg.lstsq(x_matrix, y_vector, rcond=None)
                     cont_val = x_matrix @ coeff
-                    exercise = immediate[in_money] >= cont_val
-                    cashflow[in_money] = np.where(exercise, immediate[in_money], cashflow[in_money])
+                    exercise = imm_itm >= cont_val
+                    cashflow[in_money] = np.where(exercise, imm_itm, cashflow[in_money])
 
         df_first = current_market.get_discount_factor(dt)
         discounted_cashflow = df_first * cashflow

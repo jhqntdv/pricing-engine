@@ -14,6 +14,7 @@ from kernel.models.discretization_schemes.euler_scheme import EulerScheme
 import numpy as np
 import pandas as pd
 import copy
+from typing import Union
 from kernel.exceptions import UnsupportedProductError, UnsupportedModelError
 
 class MCPricingEngine(AbstractPricingEngine):
@@ -176,7 +177,7 @@ class MCPricingEngine(AbstractPricingEngine):
         else:
             raise UnsupportedModelError(f"Unsupported model: {self.model.name}. Supported models are: BLACK_SCHOLES, HESTON.")
 
-    def _get_price(self, derivative: AbstractDerivative, stochastic_process: StochasticProcess, current_market: Market = None, pre_simulated_paths: np.ndarray = None, return_std: bool = False):
+    def _get_price(self, derivative: AbstractDerivative, stochastic_process: StochasticProcess, current_market: Market = None, pre_simulated_paths: Union[np.ndarray, "SimulationResult"] = None, return_std: bool = False):
         """Simulate paths and calculate the discounted price.
 
         Args:
@@ -212,7 +213,8 @@ class MCPricingEngine(AbstractPricingEngine):
         return price
 
     def _spot_eps(self, derivative: AbstractOption) -> float:
-        return 1.0
+        S0 = self.market.underlying_asset.last_price
+        return max(1e-2 * S0, 1e-8)
 
     def _delta_gamma(self, derivative: AbstractOption, base_price: float) -> tuple[float, float]:
         epsilon_spot = self._spot_eps(derivative)
@@ -258,8 +260,8 @@ class MCPricingEngine(AbstractPricingEngine):
     def _rho(self, derivative: AbstractOption) -> float:
         epsilon = 0.0001
         epsilon_fit = epsilon * 100 
-        market_up = self.market.bump_flat_yield_curve(epsilon_fit)
-        market_down = self.market.bump_flat_yield_curve(-epsilon_fit)
+        market_up = self.market.bump_flat_yield_curve_fast(epsilon_fit)
+        market_down = self.market.bump_flat_yield_curve_fast(-epsilon_fit)
 
         process_up = self.get_stochastic_process(derivative, market_up)
         process_down = self.get_stochastic_process(derivative, market_down)
@@ -303,6 +305,8 @@ class MCPricingEngine(AbstractPricingEngine):
             # CRN forward difference: need at least 2 steps so that dropping
             # the last column leaves a valid grid with >= 1 time step.
             if self.nb_steps < 2:
+                import warnings
+                warnings.warn("CRN Theta needs nb_steps >= 2; returning 0.0.")
                 return 0.0
 
             dt_grid = derivative.maturity / self.nb_steps  # one grid step = bump size

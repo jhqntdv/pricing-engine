@@ -212,3 +212,17 @@ def test_theta_crn_put_sign():
     assert np.sign(mc_theta) == np.sign(analytical_theta), (
         f"Put theta sign wrong: mc={mc_theta:.4f}, bs={analytical_theta:.4f}"
     )
+
+def test_theta_warns_low_steps():
+    """CRN Theta needs >= 2 steps, warns otherwise."""
+    import pytest
+    from kernel.products.options.barrier_options import UpAndOutCallOption
+    S, K, T, r, sigma = 100.0, 100.0, 1.0, 0.05, 0.20
+    market = DummyMarket(spot=S, rate=r, vol=sigma)
+    settings = PricingSettings(nb_paths=100_000, nb_steps=1, compute_greeks=True, random_seed=42)
+    settings.model = Model.BLACK_SCHOLES
+    engine = MCPricingEngine(market, settings)
+    barrier_call = UpAndOutCallOption(maturity=T, strike=K, barrier=120.0)
+    with pytest.warns(UserWarning, match="CRN Theta needs nb_steps >= 2"):
+        res = engine.get_result(barrier_call)
+    assert res.greeks["theta"] == 0.0

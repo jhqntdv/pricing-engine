@@ -267,43 +267,43 @@ Smoke-test greeks under Heston explicitly via **Test 8**, not just "indirectly v
 Execute **strictly in order**. Each phase must leave the **entire existing test suite green** before starting the next. This is the safest ordering because it introduces the new type behind a fully backward-compatible facade first, then migrates consumers one at a time.
 
 ### Phase 0 — Prerequisite
-- [ ] Confirm the core Log-Euler and Product Payoff fixes (Phase 1–5 of the previous plan) are merged to `main`. This work touches the same engine files; doing it after avoids merge conflicts.
-- [ ] Run the full suite and record the current green baseline (and the golden American-BS price for Test 5).
+- [x] Confirm the core Log-Euler and Product Payoff fixes (Phase 1–5 of the previous plan) are merged to `main`. This work touches the same engine files; doing it after avoids merge conflicts.
+- [x] Run the full suite and record the current green baseline (and the golden American-BS price for Test 5).
 
 ### Phase 1 — Introduce `SimulationResult` (no behavior change)
-- [ ] Create `simulation_result.py` with the dataclass.
-- [ ] Add a unit test constructing a `SimulationResult` (spot only, and spot+variance).
-- [ ] **Do not touch `EulerScheme` yet.** Suite stays green trivially.
+- [x] Create `simulation_result.py` with the dataclass.
+- [x] Add a unit test constructing a `SimulationResult` (spot only, and spot+variance).
+- [x] **Do not touch `EulerScheme` yet.** Suite stays green trivially.
 
 ### Phase 2 — Switch `EulerScheme` to return `SimulationResult` + fix its direct consumers
 This is the "breaking" phase; keep it tightly scoped. **All 4 production call-sites and both array-consuming test files must change together, or the suite will not be green.**
-- [ ] Create `simulation_result.py` (if not done in Phase 1) and re-export from `discretization_schemes/__init__.py` (§2.A).
-- [ ] Update `_simulate_one_factor` (return `SimulationResult(spot_paths=paths)`), `_simulate_two_factor` (**stop slicing `[:,:,0]` away** — return `SimulationResult(spot_paths=paths[:,:,0], variance_paths=paths[:,:,1])`), and the `simulate_paths` return annotation.
-- [ ] **Call-site 1 —** `MCPricingEngine._get_price` (C.1): unpack `.spot_paths`, keep raw-array support for `pre_simulated_paths`.
-- [ ] **Call-site 2 —** `MCPricingEngine._theta` (C.4): change line ~307 to `... .spot_paths` **before** the `base_paths[:, :-1]` slice. ⚠️ **Do not skip — this is the one the earlier draft missed.**
-- [ ] **Call-site 3 —** `CallableMCPricingEngine.get_coupon` (C.2): unpack `.spot_paths` early.
-- [ ] **Call-site 4 —** `AmericanMCPricingEngine._get_price` (C.3): unpack spot **and** variance, but **keep the 1-D basis for now** (do not add variance terms yet — that is Phase 3).
-- [ ] **Fix `tests/test_models.py`** (3 sites: lines 95, 118, 141) → append `.spot_paths`.
-- [ ] **Fix `tests/test_log_euler.py`** (8 sites: lines 15, 29, 42, 56, 73, 87, 103, 120) → append `.spot_paths`. ⚠️ **Do not skip this file.**
-- [ ] Confirm the indirect guards still pass unchanged: `tests/test_theta_crn.py` (proves C.4 landed), `tests/test_american_engine.py`, `tests/test_mc_engine_greeks.py`.
-- [ ] Run suite → must be green. At this point behavior is identical to before; only the plumbing changed.
+- [x] Create `simulation_result.py` (if not done in Phase 1) and re-export from `discretization_schemes/__init__.py` (§2.A).
+- [x] Update `_simulate_one_factor` (return `SimulationResult(spot_paths=paths)`), `_simulate_two_factor` (**stop slicing `[:,:,0]` away** — return `SimulationResult(spot_paths=paths[:,:,0], variance_paths=paths[:,:,1])`), and the `simulate_paths` return annotation.
+- [x] **Call-site 1 —** `MCPricingEngine._get_price` (C.1): unpack `.spot_paths`, keep raw-array support for `pre_simulated_paths`.
+- [x] **Call-site 2 —** `MCPricingEngine._theta` (C.4): change line ~307 to `... .spot_paths` **before** the `base_paths[:, :-1]` slice. ⚠️ **Do not skip — this is the one the earlier draft missed.**
+- [x] **Call-site 3 —** `CallableMCPricingEngine.get_coupon` (C.2): unpack `.spot_paths` early.
+- [x] **Call-site 4 —** `AmericanMCPricingEngine._get_price` (C.3): unpack spot **and** variance, but **keep the 1-D basis for now** (do not add variance terms yet — that is Phase 3).
+- [x] **Fix `tests/test_models.py`** (3 sites: lines 95, 118, 141) → append `.spot_paths`.
+- [x] **Fix `tests/test_log_euler.py`** (8 sites: lines 15, 29, 42, 56, 73, 87, 103, 120) → append `.spot_paths`. ⚠️ **Do not skip this file.**
+- [x] Confirm the indirect guards still pass unchanged: `tests/test_theta_crn.py` (proves C.4 landed), `tests/test_american_engine.py`, `tests/test_mc_engine_greeks.py`.
+- [x] Run suite → must be green. At this point behavior is identical to before; only the plumbing changed.
 
 ### Phase 3 — Add the 2-D LSM regression (the actual feature)
-- [ ] Implement the expanded, variance-normalized basis in `AmericanMCPricingEngine._get_price` (C.3 step 2), guarded by `if var_paths is not None`.
-- [ ] Verify Black-Scholes American price is unchanged (Test 5 golden value) — the guard must be a no-op for one-factor.
-- [ ] Run suite → green.
+- [x] Implement the expanded, variance-normalized basis in `AmericanMCPricingEngine._get_price` (C.3 step 2), guarded by `if var_paths is not None`.
+- [x] Verify Black-Scholes American price is unchanged (Test 5 golden value) — the guard must be a no-op for one-factor.
+- [x] Run suite → green.
 
 ### Phase 4 — Math & integration test suite
-- [ ] Add `tests/test_heston_integration.py` with Tests 1–8 (Section 3.1). **Note Test 1 must go through the engine (not duplicate `test_log_euler.py::test_heston_degenerates_to_bs`), and Test 8 is the C.4 theta guard.**
-- [ ] Tune tolerances using returned `std_dev` (statistical bands), not hardcoded atol.
-- [ ] Ensure Test 3/4 use `nb_steps >= 250`.
-- [ ] Test 4: assert the 6-column design matrix is actually used (guard against silent 1-D fallback). **Do not** attempt the out-of-sample regress/value split — the engine has no API for it (see Test 4 note).
+- [x] Add `tests/test_heston_integration.py` with Tests 1–8 (Section 3.1). **Note Test 1 must go through the engine (not duplicate `test_log_euler.py::test_heston_degenerates_to_bs`), and Test 8 is the C.4 theta guard.**
+- [x] Tune tolerances using returned `std_dev` (statistical bands), not hardcoded atol.
+- [x] Ensure Test 3/4 use `nb_steps >= 250`.
+- [x] Test 4: assert the 6-column design matrix is actually used (guard against silent 1-D fallback). **Do not** attempt the out-of-sample regress/value split — the engine has no API for it (see Test 4 note).
 
 ### Phase 5 — Hardening & docs
-- [ ] Add the Feller-condition assertion/comment.
-- [ ] Confirm Greeks run under Heston — this is **Test 8** (delta/gamma/vega/rho inherit C.1; theta needs C.4). Not just an indirect check.
-- [ ] Update docstrings/return annotations; note the `pre_simulated_paths` polymorphism.
-- [ ] Final full-suite run + a manual Heston American vs. European sanity print.
+- [x] Add the Feller-condition assertion/comment.
+- [x] Confirm Greeks run under Heston — this is **Test 8** (delta/gamma/vega/rho inherit C.1; theta needs C.4). Not just an indirect check.
+- [x] Update docstrings/return annotations; note the `pre_simulated_paths` polymorphism.
+- [x] Final full-suite run + a manual Heston American vs. European sanity print.
 
 ---
 

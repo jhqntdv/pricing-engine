@@ -27,6 +27,11 @@ flowchart LR
     I --> J
 ```
 
+### 核心設計理念 (Core Design Principles)
+
+* **單一標的與多因子模擬 (Single Underlying with Multi-Factor Simulation):** 
+  請注意，本定價引擎目前**僅支援單一標的資產 (Single Underlying)** 的定價（多資產關聯性模擬尚未支援）。然而，針對該單一標的，引擎支援最高雙因子 (Two-Factor) 的隨機過程模型。例如：在 Heston 模型下，系統底層會透過多型 (Polymorphic) 的 `SimulationResult` 資料容器，同時攜帶價格路徑 (`spot_paths`) 與變異數路徑 (`variance_paths`)，讓所有下游的奇異選擇權與結構型商品皆能無縫存取多維度狀態。
+
 ### 專案結構 (Directory Structure)
 
 ```
@@ -82,6 +87,9 @@ structured-products-engine-only/
 | `AmericanCallOption`, `AmericanPutOption` | `strike` (float), `maturity` (float) |
 | `BermudanCallOption`, `BermudanPutOption` | `strike` (float), `maturity` (float), `exercise_times` (List[float]) |
 
+> [!NOTE]
+> 美式與百慕大選擇權現已全面支援 `Model.HESTON`。引擎內部實作了先進的 **2-D Longstaff-Schwartz (LSM)** 演算法，採用 6 項擴展基底函數 ($1, S, S^2, v, v^2, S \cdot v$)，精準捕捉價格與波動度聯合動態下的提前履約價值。
+
 ### 2.3 選擇權策略 (Option Strategies) — 引擎: `MC`
 
 | 策略名稱 (Strategy) | 類別名稱 (Class) | 參數 (Parameters) |
@@ -105,6 +113,9 @@ structured-products-engine-only/
 | **Eagle** | `maturity` (float), `observation_frequency` (ObservationFrequency), `capital_barrier` (float, %), `autocall_barrier` (float, %), `coupon_rate` (float, %), `is_security` (bool, 預設 false), `is_plus` (bool, 預設 false) |
 | **TwinWin** | `maturity` (float), `upper_barrier` (float), `lower_barrier` (float), `rebate` (float), `leverage` (float) — **TBD: 尚未完成向量化** |
 | **Airbag** | `maturity` (float), `upper_barrier` (float), `lower_barrier` (float), `rebate` (float), `leverage` (float) — **TBD: 尚未完成向量化** |
+
+> [!NOTE]
+> Autocall 商品 (Phoenix / Eagle) 現已全面相容 `Model.HESTON`。在多因子路徑下，配息率求解器 (Solver) 依然能保持高效收斂。
 
 ### 2.5 利率商品 (Rate Products) — 引擎: `RATE`
 
@@ -135,7 +146,7 @@ structured-products-engine-only/
 | `random_seed` | `int` | `4012` | 隨機數種子，確保結果可複現。 |
 | `compute_greeks` | `bool` | `False` | 是否計算風險指標 (Delta, Gamma, Vega, Theta, Rho)。開啟後計算時間約為原來的 **6-7 倍**。 |
 | `compute_callable_coupons` | `bool` | `False` | 是否開啟隱含配息率求解模式 (僅搭配 `CALLABLE_MC` 引擎)。 |
-| `random_generator_type` | `str` | `"NUMPY"` | 亂數產生器：`"NUMPY"` (偽隨機) 或 `"SOBOL"` (準蒙地卡羅，`nb_paths` 建議為 2 的冪次)。 |
+| `random_generator_type` | `str` | `"NUMPY"` | 亂數產生器：`"NUMPY"` (偽隨機) 或 `"SOBOL"` (準蒙地卡羅 QMC)。**使用 `"SOBOL"` 時，建議將 `nb_paths` 設為 2 的冪次 (如 8192 或 16384)，以發揮低差異序列 (Low-Discrepancy Sequence) 的最佳收斂效能。** |
 | `valuation_date` | `datetime` | `None` | 估值日期覆寫 (主要用於利率商品)。 |
 
 ---
@@ -466,6 +477,10 @@ MC 定價屬於 **CPU-bound** 運算（非 I/O-bound），不適合用 `async/aw
 目前僅 `SPX` 具備完整的波動度曲面資料 (`data/option_data/option_data_SPX.csv`)。若需新增其他標的，需：
 1. 在 `data/underlying_data.csv` 新增一筆標的資料列。
 2. 在 `data/option_data/` 新增對應的 `option_data_{TICKER}.csv` 檔案（格式：Maturity × Strike 的隱含波動率矩陣）。
+
+### Heston 模型與 Feller Condition 警告
+當 `PricingSettings.model` 設為 `HESTON` 時，引擎會在初始化階段主動檢查 **Feller Condition** ($2\kappa\theta \leq \sigma^2$)。
+若傳入的市場波動度曲面或手動參數違反此數學條件（代表變異數路徑在模擬中會頻繁觸及零界線），系統並不會強制中斷，但會拋出明碼的 `UserWarning: Feller condition violated...`。Web 後端可視業務需求，決定是否將此警告攔截並顯示給終端報價人員，以提示該組參數的數值不穩定風險。
 
 ### API Payload 設計建議
 

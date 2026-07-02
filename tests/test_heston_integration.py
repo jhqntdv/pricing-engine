@@ -37,6 +37,12 @@ class DummyMarket(Market):
     def get_volatility(self, strike: float, maturity: float) -> float:
         return self.vol
 
+    def bump_flat_yield_curve_fast(self, bump: float):
+        import copy
+        bumped = copy.deepcopy(self)
+        bumped.rate += bump
+        return bumped
+
 class DummyHestonModel:
     def __init__(self, kappa=2.0, theta=0.04, sigma=0.3, rho=-0.5, v0=0.04):
         self.name = "HESTON"
@@ -108,16 +114,28 @@ def test_american_put_2d_regression():
     S0, K, T, r = 100.0, 100.0, 1.0, 0.05
     market = DummyMarket(spot=S0, rate=r)
     # Use out of sample seed for pricing
-    settings = PricingSettings(nb_paths=50000, nb_steps=50, random_seed=99)
+    settings = PricingSettings(nb_paths=50000, nb_steps=250, random_seed=99)
     model = DummyHestonModel(kappa=2.0, theta=0.04, sigma=0.3, rho=-0.5, v0=0.04)
     settings.model = model
     
     am_put = AmericanPutOption(maturity=T, strike=K)
     eu_put = EuropeanPutOption(maturity=T, strike=K)
     
+    # We want to assert that the 2-D regression uses a 6-column matrix (the expanded basis).
+    # We patch np.linalg.lstsq to spy on the x_matrix shape.
+    original_lstsq = np.linalg.lstsq
+    lstsq_shapes = []
+    def spy_lstsq(a, b, rcond=None, *args, **kwargs):
+        lstsq_shapes.append(a.shape[1])
+        return original_lstsq(a, b, rcond=rcond, *args, **kwargs)
+
     # 2D Engine
-    engine_2d = AmericanMCPricingEngine(market, settings)
-    res_2d = engine_2d.get_result(am_put)
+    with patch('numpy.linalg.lstsq', side_effect=spy_lstsq):
+        engine_2d = AmericanMCPricingEngine(market, settings)
+        res_2d = engine_2d.get_result(am_put)
+    
+    # Assert that the 6-column branch was taken at least once
+    assert 6 in lstsq_shapes, "The 2-D regression was expected to use a 6-column design matrix, but it didn't."
     
     # 1D Engine by forcing variance_paths = None
     from kernel.models.discretization_schemes.euler_scheme import EulerScheme
@@ -136,9 +154,14 @@ def test_american_put_2d_regression():
 
     tol = 3 * res_2d.std_dev
     
-    # 2D price >= 1D price - tol
-    assert res_2d.price >= res_1d.price - tol
+    # High-accuracy Heston American-put benchmark (Golden run reference offline value)
+    benchmark_2d_price = 6.023317016514259
+    bias_allowance = 0.05
+    assert abs(res_2d.price - benchmark_2d_price) <= tol + bias_allowance
     
+    # 2-D price should be no further from truth than 1-D price
+    assert abs(res_2d.price - benchmark_2d_price) <= abs(res_1d.price - benchmark_2d_price) + tol
+
     # American >= European
     assert res_2d.price >= res_eu.price - tol
     
@@ -203,3 +226,28 @@ def test_structured_products_autocalls_heston():
     assert hasattr(res, "coupon_callable")
     assert np.isfinite(res.coupon_callable)
     assert res.coupon_callable != 0.0
+
+def test_heston_theta_runs():
+    """Test 8: Heston Theta runs (the C.4 regression guard)."""
+    S0, K, T, r = 100.0, 100.0, 1.0, 0.05
+    market = DummyMarket(spot=S0, rate=r)
+    settings = PricingSettings(nb_paths=10000, nb_steps=50, random_seed=42)
+    settings.compute_greeks = True
+    settings.model = DummyHestonModel()
+    
+    engine = MCPricingEngine(market, settings)
+    vanilla = EuropeanCallOption(maturity=T, strike=K)
+    
+    res_vanilla = engine.get_result(vanilla)
+    assert res_vanilla.greeks is not None
+    assert "theta" in res_vanilla.greeks
+    theta = res_vanilla.greeks["theta"]
+    assert np.isfinite(theta)
+    assert theta < 0.0
+    
+    # Bonus: UpAndOutCallOption
+    barrier = UpAndOutCallOption(maturity=T, strike=K, barrier=120.0)
+    res_barrier = engine.get_result(barrier)
+    assert res_barrier.greeks is not None
+    assert "theta" in res_barrier.greeks
+    assert np.isfinite(res_barrier.greeks["theta"])

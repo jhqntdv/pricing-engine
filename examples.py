@@ -34,11 +34,12 @@ def main():
     settings.interpolation_type = InterpolationType.CUBIC
     settings.day_count_convention = CalendarConvention.ACT_360
     settings.obs_frequency = ObservationFrequency.ANNUAL
+    settings.random_generator_type = "SOBOL"
     settings.model = Model.BLACK_SCHOLES
     settings.volatility_surface_type = VolatilitySurfaceType.SVI
     settings.compute_greeks = True
     settings.nb_paths = 10000  
-    settings.nb_steps = 100
+    settings.nb_steps = 256
 
     data_loader = MarketDataLoader()
     underlying_df = data_loader.get_underlying_info(settings.underlying_name)
@@ -91,9 +92,11 @@ def main():
 
     results_list = []
     
-    def run_batch(products, engine_type, model_type):
+    def run_batch(products, engine_type, model_type, gen_type, display_name):
         settings.pricing_engine_type = engine_type
         settings.model = model_type
+        settings.random_generator_type = gen_type
+        settings.nb_paths = 5000 if gen_type == "SOBOL" else 10000
         for name, prod in products:
             start = time.time()
             res = launcher.calculate(prod)
@@ -101,11 +104,11 @@ def main():
             
             row = {
                 "Product": name,
-                "Model": model_type.name,
+                "Model": display_name,
                 "Price": f"{res.price:.4f}",
                 "Time(s)": f"{elapsed:.4f}",
             }
-            if res.std_dev is not None:
+            if res.std_dev is not None and gen_type != "SOBOL":
                 row["StdDev"] = f"{res.std_dev:.4f}"
             else:
                 row["StdDev"] = "N/A"
@@ -123,21 +126,25 @@ def main():
 
     total_t0 = time.time()
     
-    # Run European under Black-Scholes and Heston
-    run_batch(european_products, PricingEngineType.MC, Model.BLACK_SCHOLES)
-    run_batch(european_products, PricingEngineType.MC, Model.HESTON)
+    # Run European
+    run_batch(european_products, PricingEngineType.MC, Model.BLACK_SCHOLES, "NUMPY", "BS (Pseudo)")
+    run_batch(european_products, PricingEngineType.MC, Model.BLACK_SCHOLES, "SOBOL", "BS (Sobol)")
+    run_batch(european_products, PricingEngineType.MC, Model.HESTON, "NUMPY", "Heston")
     
-    # Run Path Dependent under Black-Scholes and Heston
-    run_batch(path_dependent_products, PricingEngineType.MC, Model.BLACK_SCHOLES)
-    run_batch(path_dependent_products, PricingEngineType.MC, Model.HESTON)
+    # Run Path Dependent
+    run_batch(path_dependent_products, PricingEngineType.MC, Model.BLACK_SCHOLES, "NUMPY", "BS (Pseudo)")
+    run_batch(path_dependent_products, PricingEngineType.MC, Model.BLACK_SCHOLES, "SOBOL", "BS (Sobol)")
+    run_batch(path_dependent_products, PricingEngineType.MC, Model.HESTON, "NUMPY", "Heston")
     
-    # Run Early Exercise under Black-Scholes and Heston
-    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.BLACK_SCHOLES)
-    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.HESTON)
+    # Run Early Exercise
+    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.BLACK_SCHOLES, "NUMPY", "BS (Pseudo)")
+    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.BLACK_SCHOLES, "SOBOL", "BS (Sobol)")
+    run_batch(american_products, PricingEngineType.AMERICAN_MC, Model.HESTON, "NUMPY", "Heston")
     
-    # Run Structured Products under Black-Scholes and Heston
-    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.BLACK_SCHOLES)
-    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.HESTON)
+    # Run Structured Products
+    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.BLACK_SCHOLES, "NUMPY", "BS (Pseudo)")
+    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.BLACK_SCHOLES, "SOBOL", "BS (Sobol)")
+    run_batch(structured_products, PricingEngineType.CALLABLE_MC, Model.HESTON, "NUMPY", "Heston")
 
     df = pd.DataFrame(results_list)
     
@@ -145,11 +152,11 @@ def main():
     # Pivot to get models side-by-side
     pivot_df = df.pivot(index='Product', columns='Model', values=['Price', 'Time(s)', 'StdDev', 'Delta', 'Gamma', 'Vega'])
     
-    # Flatten columns: 'Price' 'BLACK_SCHOLES' -> 'Price (BS)'
+    # Flatten columns and reorder
+    pivot_df = pivot_df.reindex(columns=["BS (Pseudo)", "BS (Sobol)", "Heston"], level=1)
     new_cols = []
     for val_col, model_col in pivot_df.columns:
-        model_name = "BS" if model_col == "BLACK_SCHOLES" else "Heston"
-        new_cols.append(f"{val_col} ({model_name})")
+        new_cols.append(f"{val_col} {model_col}")
     pivot_df.columns = new_cols
     pivot_df = pivot_df.reset_index()
     
@@ -158,10 +165,22 @@ def main():
     pivot_df['Product'] = pd.Categorical(pivot_df['Product'], categories=product_order, ordered=True)
     pivot_df = pivot_df.sort_values('Product')
     
-    print("=" * 120)
-    print("ALL PRODUCTS: BLACK-SCHOLES vs HESTON (Side-by-Side Comparison)")
-    print("=" * 120)
-    print(pivot_df.set_index('Product').T.to_string())
+    print("=" * 140)
+    print("ALL PRODUCTS: BS (Pseudo) vs BS (Sobol) vs Heston (Side-by-Side Comparison)")
+    print("=" * 140)
+    
+    transposed_df = pivot_df.set_index('Product').T
+    chunk_size = 5
+    for i in range(0, len(transposed_df.columns), chunk_size):
+        chunk = transposed_df.iloc[:, i:i+chunk_size]
+        lines = chunk.to_string().split('\n')
+        print(lines[0])
+        for j in range(1, len(lines)):
+            print(lines[j])
+            if j % 3 == 0 and j != len(lines) - 1:
+                print("-" * 140)
+        if i + chunk_size < len(transposed_df.columns):
+            print("=" * 140)
     
     print(f"\nTotal Pricing Time (excluding market init): {time.time() - total_t0:.4f} seconds")
 
