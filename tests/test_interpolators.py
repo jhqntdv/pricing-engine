@@ -43,8 +43,8 @@ class TestNelsonSiegelInterpolator:
         assert rmse < 1e-3
         
     def test_negative_interest_rates(self):
-        maturities = np.array([1.0, 2.0, 5.0, 10.0])
-        rates = np.array([-0.005, -0.003, -0.001, 0.005])
+        maturities = np.array([1.0, 2.0, 3.0, 5.0, 10.0])
+        rates = np.array([-0.005, -0.003, -0.002, -0.001, 0.005])
         
         interp = NelsonSiegelInterpolator(maturities, rates)
         interp.calibrate()

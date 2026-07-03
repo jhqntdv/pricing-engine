@@ -95,6 +95,7 @@ def test_delta_gamma_share_simulations():
     base_price = engine._get_price(derivative, engine.get_stochastic_process(derivative, market), market)
     
     with patch("kernel.models.pricing_engines.mc_pricing_engine.EulerScheme.simulate_paths") as mock_sim:
+        mock_sim.return_value.spot_paths = np.ones((10, 3)) * 100.0
         engine._delta_gamma(derivative, base_price)
         # Should be called exactly twice (up and down)
         assert mock_sim.call_count == 2
