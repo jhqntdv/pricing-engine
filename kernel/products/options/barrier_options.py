@@ -29,7 +29,7 @@ class UpBarrierOption(AbstractBarrierOption):
         Returns:
             np.ndarray: Boolean array of shape (nb_paths,); True if the up-barrier was hit.
         """
-        return np.max(paths, axis=1) > self.barrier
+        return np.max(paths, axis=1) >= self.barrier
 
 
 class DownBarrierOption(AbstractBarrierOption):
@@ -49,7 +49,7 @@ class DownBarrierOption(AbstractBarrierOption):
         Returns:
             np.ndarray: Boolean array of shape (nb_paths,); True if the down-barrier was hit.
         """
-        return np.min(paths, axis=1) < self.barrier
+        return np.min(paths, axis=1) <= self.barrier
 
 
 class UpAndOutCallOption(UpBarrierOption):
