@@ -178,7 +178,7 @@ class SSVIVolatilitySurface(AbstractVolatilitySurface):
         self.calibrate_atm_variance()
 
         # Initial guess for the SSVI parameters [rho, eta, gamma]
-        initial_values = [0.1, 0.1, 0.1]
+        initial_values = [0.2, 0.1, 0.1]
         
         # Arbitrage-free bounds for Power-Law SSVI:
         # rho in (-1, 1), eta > 0, gamma in (0, 0.5]
