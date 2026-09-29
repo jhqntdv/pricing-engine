@@ -101,11 +101,19 @@ class LocalVolatilitySurface(AbstractVolatilitySurface):
         dw_dk = (w_up_k - w_dn_k) / (2 * dk)
         d2w_dk2 = (w_up_k - 2 * w + w_dn_k) / (dk ** 2)
 
-        # Time derivative (Central Difference with Forward Difference near boundary t=0)
-        if t - dt < 1e-8:
+        # Time derivative (Forward/Backward difference at calibration boundaries, Central inside)
+        min_m = min(self.svi_surface.svi_params_by_maturity.keys())
+        max_m = max(self.svi_surface.svi_params_by_maturity.keys())
+        if t - dt < min_m:
+            # Forward difference at or near the lower boundary
             w_up_t = self._total_variance(k, t + dt)
             dw_dt = (w_up_t - w) / dt
+        elif t + dt > max_m:
+            # Backward difference at or near the upper boundary
+            w_dn_t = self._total_variance(k, t - dt)
+            dw_dt = (w - w_dn_t) / dt
         else:
+            # Central difference strictly inside the calibrated range
             w_up_t = self._total_variance(k, t + dt)
             w_dn_t = self._total_variance(k, t - dt)
             dw_dt = (w_up_t - w_dn_t) / (2 * dt)
